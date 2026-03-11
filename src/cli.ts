@@ -4,12 +4,14 @@ import { runTodo } from './commands/todo';
 import { runPrs } from './commands/prs';
 
 const args = process.argv.slice(2);
-const flags = new Set(args.filter(a => a.startsWith('-')));
-const positional = args.filter(a => !a.startsWith('-'));
-const command = positional[0] ?? 'standup';
 
 const daysIdx = args.indexOf('--days');
 const days = daysIdx !== -1 && args[daysIdx + 1] ? parseInt(args[daysIdx + 1], 10) : undefined;
+
+const flags = new Set(args.filter(a => a.startsWith('-')));
+// Exclude flag names and their values (e.g. --days 7) from positional args
+const positional = args.filter((a, i) => !a.startsWith('-') && !(daysIdx !== -1 && i === daysIdx + 1));
+const command = positional[0] ?? 'standup';
 
 function printHelp(): void {
   console.log(`
