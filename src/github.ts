@@ -2,6 +2,13 @@ import { Octokit } from '@octokit/rest';
 import { Config } from './config';
 import { insertGithubEvent, updateGithubEventPrTitle, getMeta, setMeta, getRecentRepos, getDb } from './db';
 
+function isIgnoredRepo(repo: string, config: Config): boolean {
+  const ignore = config.github.ignoreRepos ?? [];
+  return ignore.some(entry =>
+    entry.includes('/') ? entry === repo : entry === repo.split('/')[1]
+  );
+}
+
 export async function pollGithub(config: Config): Promise<void> {
   const octokit = new Octokit({ auth: config.github.token });
   const username = config.github.username;
@@ -31,6 +38,7 @@ export async function pollGithub(config: Config): Promise<void> {
         }
 
         const repoName = event.repo?.name ?? 'unknown/unknown';
+        if (isIgnoredRepo(repoName, config)) continue;
 
         if (event.type === 'PushEvent') {
           const payload = event.payload as {
@@ -193,6 +201,7 @@ export async function getOpenPRs(config: Config): Promise<OpenPR[]> {
   const repos = getRecentRepos(30);
 
   for (const fullRepo of repos) {
+    if (isIgnoredRepo(fullRepo, config)) continue;
     const [owner, repo] = fullRepo.split('/');
     if (!owner || !repo) continue;
 

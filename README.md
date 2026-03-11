@@ -99,13 +99,15 @@ nano ~/.standup-bot/config.json
 {
   "github": {
     "token": "ghp_...",
-    "username": "your-github-username"
+    "username": "your-github-username",
+    "ignoreRepos": []
   },
   "jira": {
     "domain": "yourcompany.atlassian.net",
     "email": "you@yourcompany.com",
     "apiToken": "ATATT3x...",
     "project": [],
+    "ignoreProjects": [],
     "customFields": {
       "storyPoints": "customfield_10106",
       "sprint": "customfield_10020"
@@ -127,6 +129,8 @@ nano ~/.standup-bot/config.json
 
 **Notes:**
 - `project` can be an empty array `[]` (tracks all projects) or a list of keys: `["PROJ", "INFRA"]`
+- `ignoreProjects` excludes specific Jira project keys regardless of `project`: `["ARCHV", "TEMP"]`
+- `ignoreRepos` excludes GitHub repos from polling and standup output. Accepts full `owner/repo` or just `repo` name: `["acme-org/legacy-app", "sandbox"]`
 - `statuses` should match the exact status names in your Jira instance — check a ticket's status dropdown if unsure
 - `customFields` defaults match common Jira Cloud configurations; update them if story points or sprint aren't showing up
 

@@ -44,10 +44,12 @@ interface JiraComment {
 }
 
 function projectClause(config: Config): string {
-  const projects = config.jira.projects ?? [];
-  if (projects.length === 0) return '';
-  const keys = projects.map(p => `"${p}"`).join(', ');
-  return ` AND project IN (${keys})`;
+  const include = config.jira.projects ?? [];
+  const exclude = config.jira.ignoreProjects ?? [];
+  const parts: string[] = [];
+  if (include.length > 0) parts.push(`project IN (${include.map(p => `"${p}"`).join(', ')})`);
+  if (exclude.length > 0) parts.push(`project NOT IN (${exclude.map(p => `"${p}"`).join(', ')})`);
+  return parts.length > 0 ? ' AND ' + parts.join(' AND ') : '';
 }
 
 export async function pollJira(config: Config): Promise<void> {

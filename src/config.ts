@@ -20,12 +20,14 @@ export interface Config {
   github: {
     token: string;
     username: string;
+    ignoreRepos: string[];
   };
   jira: {
     domain: string;
     email: string;
     apiToken: string;
     projects: string[];
+    ignoreProjects: string[];
     customFields: {
       storyPoints: string;
       sprint: string;
@@ -57,6 +59,8 @@ export function loadConfig(): Config {
       const p = parsed.jira.project;
       parsed.jira.projects = Array.isArray(p) ? p : (p ? [p] : []);
     }
+    parsed.jira.ignoreProjects ??= [];
+    parsed.github.ignoreRepos ??= [];
     _config = parsed as Config;
     return _config;
   } catch (e) {
