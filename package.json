@@ -1,0 +1,30 @@
+{
+  "name": "standup-bot",
+  "version": "1.0.0",
+  "description": "Lightweight daily standup assistant",
+  "main": "dist/cli.js",
+  "bin": {
+    "standup": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "daemon": "node dist/daemon.js",
+    "dev:daemon": "ts-node src/daemon.ts",
+    "dev:cli": "ts-node src/cli.ts"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.1.1",
+    "axios": "^1.7.2",
+    "better-sqlite3": "^9.6.0",
+    "chalk": "^4.1.2",
+    "cli-table3": "^0.6.5",
+    "node-cron": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.0",
+    "@types/node-cron": "^3.0.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
