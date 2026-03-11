@@ -2,6 +2,7 @@
 import { runStandup } from './commands/standup';
 import { runTodo } from './commands/todo';
 import { runPrs } from './commands/prs';
+import { runPoll } from './commands/poll';
 
 const args = process.argv.slice(2);
 
@@ -23,6 +24,9 @@ Commands:
   standup --days N     Look back N days instead of the default
   todo                 Tickets assigned to you in To-Do, In Dev, or QA Test Failed
   prs                  Open PRs and Peer Review tickets, with workflow issue detection
+  poll                 Manually trigger a poll (GitHub + Jira)
+  poll --git           Poll GitHub only
+  poll --jira          Poll Jira only
   help                 Show this message
 
 Examples:
@@ -47,6 +51,10 @@ async function main(): Promise<void> {
 
     case 'prs':
       await runPrs();
+      break;
+
+    case 'poll':
+      await runPoll(flags);
       break;
 
     case 'help':
