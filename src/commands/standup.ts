@@ -3,13 +3,14 @@ import { loadConfig } from '../config';
 import { getGithubEventsSince, getJiraEventsSince, getTicketsByStatuses } from '../db';
 import { getLookbackDate, getCustomLookbackDate, isMonday, formatDisplayDate, formatShortDate, formatTimestamp } from '../utils/time';
 import { transformGithubEvents, transformJiraEvents, StandupItem } from '../utils/fakeit';
+import { isIgnoredRepo } from '../github';
 
 export function runStandup(fakeit: boolean, days?: number): void {
   const config = loadConfig();
   const since = days !== undefined ? getCustomLookbackDate(days) : getLookbackDate();
   const monday = days === undefined && isMonday();
 
-  const githubEvents = getGithubEventsSince(since);
+  const githubEvents = getGithubEventsSince(since).filter(e => !isIgnoredRepo(e.repo, config));
   const jiraEvents = getJiraEventsSince(since);
 
   const header = chalk.bold.cyan(`\n=== STANDUP — ${formatDisplayDate(new Date())} ===`);

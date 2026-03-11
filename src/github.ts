@@ -2,7 +2,7 @@ import { Octokit } from '@octokit/rest';
 import { Config } from './config';
 import { insertGithubEvent, updateGithubEventPrTitle, getMeta, setMeta, getRecentRepos, getDb } from './db';
 
-function isIgnoredRepo(repo: string, config: Config): boolean {
+export function isIgnoredRepo(repo: string, config: Config): boolean {
   const ignore = config.github.ignoreRepos ?? [];
   return ignore.some(entry =>
     entry.includes('/') ? entry === repo : entry === repo.split('/')[1]
