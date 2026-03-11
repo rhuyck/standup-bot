@@ -5,6 +5,7 @@ export interface StandupItem {
   text: string;
   raw?: string;
   source: 'github' | 'jira';
+  timestamp?: string; // ISO UTC string; absent for synthetic items
 }
 
 const VERB_MAP: Record<string, string> = {
@@ -55,20 +56,17 @@ export function transformGithubEvents(events: GithubEvent[]): StandupItem[] {
       if (e.commit_count >= 5) {
         items.push({
           text: `Conducted sustained development effort on \`${branch}\` in **${shortRepo}**, delivering ${e.commit_count} commits across the iteration`,
-          raw,
-          source: 'github',
+          raw, source: 'github', timestamp: e.created_at,
         });
       } else if (e.commit_count >= 2) {
         items.push({
           text: `Executed ${e.commit_count}-commit development iteration on \`${branch}\` in **${shortRepo}**, refining implementation details`,
-          raw,
-          source: 'github',
+          raw, source: 'github', timestamp: e.created_at,
         });
       } else {
         items.push({
           text: `Advanced \`${branch}\` in **${shortRepo}** with a targeted commit addressing implementation objectives`,
-          raw,
-          source: 'github',
+          raw, source: 'github', timestamp: e.created_at,
         });
       }
     }
@@ -78,8 +76,7 @@ export function transformGithubEvents(events: GithubEvent[]): StandupItem[] {
       const raw = `Created branch ${e.branch} in ${shortRepo}`;
       items.push({
         text: `Initiated new development workstream: \`${e.branch}\` in **${shortRepo}**`,
-        raw,
-        source: 'github',
+        raw, source: 'github', timestamp: e.created_at,
       });
     }
 
@@ -90,8 +87,7 @@ export function transformGithubEvents(events: GithubEvent[]): StandupItem[] {
       const raw = `Merged PR #${e.pr_number} in ${shortRepo}`;
       items.push({
         text: `Successfully delivered **${title}** (PR #${e.pr_number}) to the production pipeline in **${shortRepo}**, clearing path for downstream integration testing`,
-        raw,
-        source: 'github',
+        raw, source: 'github', timestamp: e.created_at,
       });
     }
 
@@ -101,8 +97,7 @@ export function transformGithubEvents(events: GithubEvent[]): StandupItem[] {
       const raw = `Opened PR #${e.pr_number} in ${shortRepo}`;
       items.push({
         text: `Submitted **${title}** (PR #${e.pr_number}) for peer review in **${shortRepo}**, advancing ticket toward QA validation`,
-        raw,
-        source: 'github',
+        raw, source: 'github', timestamp: e.created_at,
       });
     }
   }
@@ -153,38 +148,32 @@ export function transformJiraEvents(events: JiraEvent[]): StandupItem[] {
         cyclesCompleted.push(ticket);
         items.push({
           text: `[**${ticket}**] Advanced to Peer Review following completion of all development objectives — *${summary}*`,
-          raw,
-          source: 'jira',
+          raw, source: 'jira', timestamp: e.created_at,
         });
       } else if (toUpper.includes('ready for qa') || toUpper.includes('ready')) {
         items.push({
           text: `[**${ticket}**] Pipeline validation complete — ticket promoted to Ready for QA — *${summary}*`,
-          raw,
-          source: 'jira',
+          raw, source: 'jira', timestamp: e.created_at,
         });
       } else if (toUpper.includes('qa test failed')) {
         items.push({
           text: `[**${ticket}**] QA feedback received and under active triage — *${summary}*`,
-          raw,
-          source: 'jira',
+          raw, source: 'jira', timestamp: e.created_at,
         });
       } else if (toUpper.includes('in development') || toUpper.includes('in progress')) {
         items.push({
           text: `[**${ticket}**] Initiated active development sprint on *${summary}*`,
-          raw,
-          source: 'jira',
+          raw, source: 'jira', timestamp: e.created_at,
         });
       } else if (e.author_email === '__automation__') {
         items.push({
           text: `[**${ticket}**] Automated pipeline successfully validated and advanced work item to **${to}** — *${summary}*`,
-          raw,
-          source: 'jira',
+          raw, source: 'jira', timestamp: e.created_at,
         });
       } else {
         items.push({
           text: `[**${ticket}**] Progressed from **${from}** to **${to}** — *${summary}*`,
-          raw,
-          source: 'jira',
+          raw, source: 'jira', timestamp: e.created_at,
         });
       }
     }
@@ -193,8 +182,7 @@ export function transformJiraEvents(events: JiraEvent[]): StandupItem[] {
       const raw = `Commented on [${ticket}]`;
       items.push({
         text: `[**${ticket}**] Provided technical guidance and documentation updates — *${summary}*`,
-        raw,
-        source: 'jira',
+        raw, source: 'jira', timestamp: e.created_at,
       });
     }
 
@@ -202,8 +190,7 @@ export function transformJiraEvents(events: JiraEvent[]): StandupItem[] {
       const raw = `Created ticket [${ticket}]`;
       items.push({
         text: `[**${ticket}**] Scoped and initiated new work item: *${summary}*`,
-        raw,
-        source: 'jira',
+        raw, source: 'jira', timestamp: e.created_at,
       });
     }
   }

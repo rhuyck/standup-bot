@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { loadConfig } from '../config';
 import { getGithubEventsSince, getJiraEventsSince, getTicketsByStatuses } from '../db';
-import { getLookbackDate, getCustomLookbackDate, isMonday, formatDisplayDate, formatShortDate } from '../utils/time';
+import { getLookbackDate, getCustomLookbackDate, isMonday, formatDisplayDate, formatShortDate, formatTimestamp } from '../utils/time';
 import { transformGithubEvents, transformJiraEvents, StandupItem } from '../utils/fakeit';
 
 export function runStandup(fakeit: boolean, days?: number): void {
@@ -92,20 +92,21 @@ function printGithubEvents(events: ReturnType<typeof getGithubEventsSince>): voi
 
   console.log(chalk.dim('  GitHub:'));
   for (const e of events) {
+    const ts = chalk.dim(formatTimestamp(e.created_at));
     const repo = chalk.cyan(e.repo.split('/')[1] ?? e.repo);
     if (e.type === 'push') {
       const isMain = e.branch === 'main' || e.branch === 'master';
       const branch = isMain ? chalk.magenta.bold(e.branch ?? '?') : chalk.blue(e.branch ?? '?');
       const msg = e.message ? chalk.dim(` "${trunc(e.message, 75)}"`) : '';
-      console.log(`    • Pushed ${e.commit_count} commit(s) to ${branch} in ${repo}${msg}`);
+      console.log(`    ${ts} Pushed ${e.commit_count} commit(s) to ${branch} in ${repo}${msg}`);
     } else if (e.type === 'branch_created') {
-      console.log(`    • Created branch ${chalk.blue(e.branch ?? '?')} in ${repo}`);
+      console.log(`    ${ts} Created branch ${chalk.blue(e.branch ?? '?')} in ${repo}`);
     } else if (e.type === 'pr_merged') {
       const title = e.pr_title ? ` ${chalk.green(trunc(e.pr_title, 75))}` : '';
-      console.log(`    • Merged PR #${e.pr_number} in ${repo}:${title}`);
+      console.log(`    ${ts} Merged PR #${e.pr_number} in ${repo}:${title}`);
     } else if (e.type === 'pr_opened') {
       const title = e.pr_title ? ` ${trunc(e.pr_title, 75)}` : '';
-      console.log(`    • Opened PR #${e.pr_number} in ${repo}:${title}`);
+      console.log(`    ${ts} Opened PR #${e.pr_number} in ${repo}:${title}`);
     }
   }
 }
@@ -119,6 +120,7 @@ function printJiraEvents(events: ReturnType<typeof getJiraEventsSince>, myEmail:
 
   console.log(chalk.dim('  Jira:'));
   for (const e of events) {
+    const ts = chalk.dim(formatTimestamp(e.created_at));
     const key = chalk.bold(e.ticket_key);
     const summary = chalk.dim(` — ${e.ticket_summary ?? ''}`);
 
@@ -126,23 +128,23 @@ function printJiraEvents(events: ReturnType<typeof getJiraEventsSince>, myEmail:
       const from = chalk.yellow(e.old_value ?? '?');
       const to = chalk.green(e.new_value ?? '?');
       const who = e.author_email === '__automation__' ? chalk.dim(' (automation)') : '';
-      console.log(`    • [${key}] ${from} → ${to}${who}${summary}`);
+      console.log(`    ${ts} [${key}] ${from} → ${to}${who}${summary}`);
     } else if (e.event_type === 'comment') {
-      console.log(`    • [${key}] Added comment${summary}`);
+      console.log(`    ${ts} [${key}] Added comment${summary}`);
     } else if (e.event_type === 'created') {
-      console.log(`    • [${key}] Created ticket${summary}`);
+      console.log(`    ${ts} [${key}] Created ticket${summary}`);
     }
   }
 }
 
 function printFakeitItems(items: StandupItem[]): void {
   for (const item of items) {
-    // Strip markdown bold syntax for terminal output, re-apply chalk
+    const ts = item.timestamp ? chalk.dim(formatTimestamp(item.timestamp)) + ' ' : '';
     const text = item.text
       .replace(/\*\*(.+?)\*\*/g, (_, s) => chalk.bold(s))
       .replace(/\*(.+?)\*/g, (_, s) => chalk.italic(s))
       .replace(/`(.+?)`/g, (_, s) => chalk.cyan(s));
-    console.log(`  • ${text}`);
+    console.log(`  • ${ts}${text}`);
   }
 }
 
