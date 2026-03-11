@@ -1,27 +1,29 @@
 import chalk from 'chalk';
 import { loadConfig } from '../config';
 import { getGithubEventsSince, getJiraEventsSince, getTicketsByStatuses } from '../db';
-import { getLookbackDate, isMonday, formatDisplayDate, formatShortDate } from '../utils/time';
+import { getLookbackDate, getCustomLookbackDate, isMonday, formatDisplayDate, formatShortDate } from '../utils/time';
 import { transformGithubEvents, transformJiraEvents, StandupItem } from '../utils/fakeit';
 
-export function runStandup(fakeit: boolean): void {
+export function runStandup(fakeit: boolean, days?: number): void {
   const config = loadConfig();
-  const since = getLookbackDate();
-  const monday = isMonday();
+  const since = days !== undefined ? getCustomLookbackDate(days) : getLookbackDate();
+  const monday = days === undefined && isMonday();
 
   const githubEvents = getGithubEventsSince(since);
   const jiraEvents = getJiraEventsSince(since);
 
   const header = chalk.bold.cyan(`\n=== STANDUP — ${formatDisplayDate(new Date())} ===`);
-  const period = monday
-    ? chalk.gray(`  (covering Thu ${formatShortDate(since)} — today)`)
-    : chalk.gray(`  (since yesterday)`);
+  const period = days !== undefined
+    ? chalk.gray(`  (last ${days} day${days === 1 ? '' : 's'}, since ${formatShortDate(since)})`)
+    : monday
+      ? chalk.gray(`  (covering Thu ${formatShortDate(since)} — today)`)
+      : chalk.gray(`  (since yesterday)`);
 
   console.log(header);
   console.log(period);
 
   // --- YESTERDAY / SINCE THURSDAY ---
-  const sinceLabel = monday ? `Since Thursday` : `Yesterday`;
+  const sinceLabel = days !== undefined ? `Last ${days} day${days === 1 ? '' : 's'}` : monday ? `Since Thursday` : `Yesterday`;
   console.log(chalk.bold.yellow(`\n${sinceLabel}:`));
 
   if (githubEvents.length === 0 && jiraEvents.length === 0) {
@@ -92,16 +94,24 @@ function printGithubEvents(events: ReturnType<typeof getGithubEventsSince>): voi
   for (const e of events) {
     const repo = chalk.cyan(e.repo.split('/')[1] ?? e.repo);
     if (e.type === 'push') {
-      const branch = chalk.blue(e.branch ?? '?');
-      console.log(`    • Pushed ${e.commit_count} commit(s) to ${branch} in ${repo}`);
+      const isMain = e.branch === 'main' || e.branch === 'master';
+      const branch = isMain ? chalk.magenta.bold(e.branch ?? '?') : chalk.blue(e.branch ?? '?');
+      const msg = e.message ? chalk.dim(` "${trunc(e.message, 75)}"`) : '';
+      console.log(`    • Pushed ${e.commit_count} commit(s) to ${branch} in ${repo}${msg}`);
     } else if (e.type === 'branch_created') {
       console.log(`    • Created branch ${chalk.blue(e.branch ?? '?')} in ${repo}`);
     } else if (e.type === 'pr_merged') {
-      console.log(`    • Merged PR #${e.pr_number} in ${repo}: ${chalk.green(e.pr_title ?? '')}`);
+      const title = e.pr_title ? ` ${chalk.green(trunc(e.pr_title, 75))}` : '';
+      console.log(`    • Merged PR #${e.pr_number} in ${repo}:${title}`);
     } else if (e.type === 'pr_opened') {
-      console.log(`    • Opened PR #${e.pr_number} in ${repo}: ${e.pr_title ?? ''}`);
+      const title = e.pr_title ? ` ${trunc(e.pr_title, 75)}` : '';
+      console.log(`    • Opened PR #${e.pr_number} in ${repo}:${title}`);
     }
   }
+}
+
+function trunc(s: string, len: number): string {
+  return s.length > len ? s.slice(0, len - 1) + '…' : s;
 }
 
 function printJiraEvents(events: ReturnType<typeof getJiraEventsSince>, myEmail: string): void {

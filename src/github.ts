@@ -1,6 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import { Config } from './config';
-import { insertGithubEvent, getMeta, setMeta, getRecentRepos } from './db';
+import { insertGithubEvent, updateGithubEventPrTitle, getMeta, setMeta, getRecentRepos, getDb } from './db';
 
 export async function pollGithub(config: Config): Promise<void> {
   const octokit = new Octokit({ auth: config.github.token });
@@ -37,8 +37,13 @@ export async function pollGithub(config: Config): Promise<void> {
             ref?: string;
             size?: number;
             head?: string;
+            commits?: Array<{ message?: string; sha?: string }>;
           };
           const branch = payload.ref?.replace('refs/heads/', '') ?? null;
+          const commits = payload.commits ?? [];
+          // Last commit in array is most recent; take first line of message only
+          const lastMsg = commits[commits.length - 1]?.message ?? null;
+          const message = lastMsg ? lastMsg.split('\n')[0].trim() : null;
           insertGithubEvent({
             id: `push-${event.id}`,
             type: 'push',
@@ -48,6 +53,7 @@ export async function pollGithub(config: Config): Promise<void> {
             pr_title: null,
             commit_count: payload.size ?? 1,
             sha: payload.head ?? null,
+            message,
             created_at: createdAt,
           });
         }
@@ -67,6 +73,7 @@ export async function pollGithub(config: Config): Promise<void> {
               pr_title: null,
               commit_count: null,
               sha: null,
+              message: null,
               created_at: createdAt,
             });
           }
@@ -79,36 +86,53 @@ export async function pollGithub(config: Config): Promise<void> {
             pull_request?: {
               title?: string;
               merged?: boolean;
-              head?: { sha?: string };
+              head?: { sha?: string; ref?: string };
             };
           };
 
+          const prNumber = payload.number ?? null;
+          // Private repo events often omit pr title — fetch it if missing
+          let prTitle = payload.pull_request?.title ?? null;
+          if (!prTitle && prNumber) {
+            try {
+              const [owner, repo] = repoName.split('/');
+              const { data: detail } = await octokit.pulls.get({ owner, repo, pull_number: prNumber });
+              prTitle = detail.title;
+            } catch { /* not critical */ }
+          }
+
           if (payload.action === 'opened') {
+            const eventId = `pr-opened-${event.id}`;
             insertGithubEvent({
-              id: `pr-opened-${event.id}`,
+              id: eventId,
               type: 'pr_opened',
               repo: repoName,
-              branch: null,
-              pr_number: payload.number ?? null,
-              pr_title: payload.pull_request?.title ?? null,
+              branch: payload.pull_request?.head?.ref ?? null,
+              pr_number: prNumber,
+              pr_title: prTitle,
               commit_count: null,
               sha: payload.pull_request?.head?.sha ?? null,
+              message: null,
               created_at: createdAt,
             });
+            if (prTitle) updateGithubEventPrTitle(eventId, prTitle);
           }
 
           if (payload.action === 'closed' && payload.pull_request?.merged) {
+            const eventId = `pr-merged-${event.id}`;
             insertGithubEvent({
-              id: `pr-merged-${event.id}`,
+              id: eventId,
               type: 'pr_merged',
               repo: repoName,
               branch: null,
-              pr_number: payload.number ?? null,
-              pr_title: payload.pull_request?.title ?? null,
+              pr_number: prNumber,
+              pr_title: prTitle,
               commit_count: null,
               sha: payload.pull_request?.head?.sha ?? null,
+              message: null,
               created_at: createdAt,
             });
+            if (prTitle) updateGithubEventPrTitle(eventId, prTitle);
           }
         }
       }
@@ -116,10 +140,46 @@ export async function pollGithub(config: Config): Promise<void> {
       page++;
     }
 
+    // Backfill PR titles and push messages for events missing them
+    await Promise.allSettled([backfillPrTitles(octokit), backfillPushMessages(octokit)]);
+
     setMeta('github_last_polled', new Date().toISOString());
     log(`GitHub poll complete`);
   } catch (err) {
     log(`GitHub poll error: ${err}`);
+  }
+}
+
+async function backfillPushMessages(octokit: Octokit): Promise<void> {
+  const nullMsgEvents = getDb().prepare(
+    `SELECT id, repo, sha FROM github_events
+     WHERE type = 'push' AND message IS NULL AND sha IS NOT NULL
+     LIMIT 30`
+  ).all() as Array<{ id: string; repo: string; sha: string }>;
+
+  for (const e of nullMsgEvents) {
+    const [owner, repo] = e.repo.split('/');
+    try {
+      const { data } = await octokit.git.getCommit({ owner, repo, commit_sha: e.sha });
+      const firstLine = data.message.split('\n')[0].trim();
+      getDb().prepare('UPDATE github_events SET message = ? WHERE id = ?').run(firstLine, e.id);
+    } catch { /* commit may be inaccessible */ }
+  }
+}
+
+async function backfillPrTitles(octokit: Octokit): Promise<void> {
+  const nullTitleEvents = getDb().prepare(
+    `SELECT id, repo, pr_number FROM github_events
+     WHERE type IN ('pr_opened', 'pr_merged') AND (pr_title IS NULL OR pr_title = '')
+     LIMIT 20`
+  ).all() as Array<{ id: string; repo: string; pr_number: number }>;
+
+  for (const e of nullTitleEvents) {
+    const [owner, repo] = e.repo.split('/');
+    try {
+      const { data } = await octokit.pulls.get({ owner, repo, pull_number: e.pr_number });
+      updateGithubEventPrTitle(e.id, data.title);
+    } catch { /* PR may be deleted or inaccessible */ }
   }
 }
 

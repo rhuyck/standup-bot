@@ -8,20 +8,26 @@ const flags = new Set(args.filter(a => a.startsWith('-')));
 const positional = args.filter(a => !a.startsWith('-'));
 const command = positional[0] ?? 'standup';
 
+const daysIdx = args.indexOf('--days');
+const days = daysIdx !== -1 && args[daysIdx + 1] ? parseInt(args[daysIdx + 1], 10) : undefined;
+
 function printHelp(): void {
   console.log(`
 standup-bot CLI
 
 Commands:
-  standup            What you did yesterday / since Thursday (if Monday)
-  standup --fakeit   Same, but framed impressively
-  todo               Tickets assigned to you in To-Do, In Dev, or QA Test Failed
-  prs                Open PRs and Peer Review tickets, with workflow issue detection
-  help               Show this message
+  standup              What you did yesterday / since Thursday (if Monday)
+  standup --fakeit     Same, but framed impressively
+  standup --days N     Look back N days instead of the default
+  todo                 Tickets assigned to you in To-Do, In Dev, or QA Test Failed
+  prs                  Open PRs and Peer Review tickets, with workflow issue detection
+  help                 Show this message
 
 Examples:
   standup
   standup --fakeit
+  standup --days 4
+  standup --fakeit --days 4
   standup todo
   standup prs
 `);
@@ -30,7 +36,7 @@ Examples:
 async function main(): Promise<void> {
   switch (command) {
     case 'standup':
-      runStandup(flags.has('--fakeit'));
+      runStandup(flags.has('--fakeit'), days);
       break;
 
     case 'todo':

@@ -64,6 +64,17 @@ function initSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_github_events_created ON github_events(created_at);
+  `);
+
+  // Non-destructive migrations for columns added after initial schema
+  const migrations = [
+    'ALTER TABLE github_events ADD COLUMN message TEXT',
+  ];
+  for (const sql of migrations) {
+    try { db.exec(sql); } catch { /* column already exists */ }
+  }
+
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_jira_events_created ON jira_events(created_at);
     CREATE INDEX IF NOT EXISTS idx_jira_tickets_status ON jira_tickets(status);
   `);
@@ -92,16 +103,21 @@ export interface GithubEvent {
   pr_title: string | null;
   commit_count: number | null;
   sha: string | null;
+  message: string | null;
   created_at: string;
 }
 
 export function insertGithubEvent(event: GithubEvent): void {
   getDb().prepare(`
     INSERT OR IGNORE INTO github_events
-      (id, type, repo, branch, pr_number, pr_title, commit_count, sha, created_at)
+      (id, type, repo, branch, pr_number, pr_title, commit_count, sha, message, created_at)
     VALUES
-      (@id, @type, @repo, @branch, @pr_number, @pr_title, @commit_count, @sha, @created_at)
+      (@id, @type, @repo, @branch, @pr_number, @pr_title, @commit_count, @sha, @message, @created_at)
   `).run(event);
+}
+
+export function updateGithubEventPrTitle(id: string, title: string): void {
+  getDb().prepare('UPDATE github_events SET pr_title = ? WHERE id = ? AND (pr_title IS NULL OR pr_title = \'\')').run(title, id);
 }
 
 export function getGithubEventsSince(since: Date): GithubEvent[] {

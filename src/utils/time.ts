@@ -1,3 +1,10 @@
+export function getCustomLookbackDate(days: number): Date {
+  const lookback = new Date();
+  lookback.setHours(0, 0, 0, 0);
+  lookback.setDate(lookback.getDate() - days);
+  return lookback;
+}
+
 export function getLookbackDate(): Date {
   const now = new Date();
   const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon ... 6=Sat
