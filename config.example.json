@@ -1,0 +1,27 @@
+{
+  "github": {
+    "token": "ghp_YOUR_GITHUB_TOKEN",
+    "username": "your-github-username"
+  },
+  "jira": {
+    "domain": "yourcompany.atlassian.net",
+    "email": "you@yourcompany.com",
+    "apiToken": "YOUR_JIRA_API_TOKEN",
+    "project": [],
+    "customFields": {
+      "storyPoints": "customfield_10106",
+      "sprint": "customfield_10020"
+    },
+    "statuses": {
+      "todo": ["To Do", "To-Do", "Open"],
+      "inDevelopment": ["In Development", "In Progress", "In-Development"],
+      "qaTestFailed": ["QA Test Failed"],
+      "peerReview": ["Peer Review"],
+      "readyForQA": ["Ready for QA", "QA In Progress"],
+      "done": ["Done", "Closed", "Resolved"]
+    }
+  },
+  "polling": {
+    "intervalMinutes": 10
+  }
+}
