@@ -181,14 +181,42 @@ You should see `--- Poll cycle complete ---` within a few seconds.
 ## Usage
 
 ```bash
-standup                  # What you did yesterday (or since Thursday if today is Monday)
-standup --fakeit         # Same, but phrased impressively
-standup --days 4         # Look back N days instead of the default
-standup --fakeit --days 4
+# Basic standup
+standup                       # Yesterday's activity (or since Thursday if today is Monday)
+standup --fakeit              # Same, but phrased impressively
+standup --days 4              # Look back N days instead of the default
 
-standup todo             # All tickets assigned to you that are active (not Done)
-standup prs              # Open PRs with CI status and matching Jira tickets
-standup help             # Show all commands
+# Scope to a data source
+standup --jira                # Show only Jira activity (events, Today, Blockers)
+standup --git                 # Show only GitHub activity
+
+# Filter by project or repo
+standup --proj MYPROJ         # Jira events and tickets for project MYPROJ only
+standup --repo renderer       # GitHub events for repos containing "renderer" (substring match)
+standup --jira --proj MYPROJ  # Combine freely
+
+# Cross-team Jira view (QA / visibility use case)
+standup --allusers            # Live Jira query — status changes across all users, up to 100 tickets
+standup --allusers --jira     # Same, Jira only (no GitHub section)
+standup --allusers --proj SD  # Narrow to a specific project
+```
+
+> **`--allusers` is Jira-only.** GitHub activity is always scoped to the configured `github.username` because the GitHub personal access token only returns events for the authenticated user. `--allusers --git` is not allowed and will exit with an error. When `--allusers` is used without `--jira`, GitHub events (your own) are still shown with a `(your activity)` label to make this clear.
+
+> **Today and Blockers are always user-specific.** Those sections read from the local SQLite database, which only stores tickets assigned to you. They are omitted when `--allusers` is active.
+
+```bash
+# Other commands
+standup clones                # Last 100 CLONE tickets with status and creation date
+standup clones --proj SD      # Filter to a specific project
+standup todo                  # All active tickets assigned to you
+standup prs                   # Open PRs with CI status and matching Jira tickets
+standup help                  # Show all commands
+
+# Manual polling
+standup poll                  # Trigger GitHub + Jira poll now
+standup poll --git            # GitHub only
+standup poll --jira           # Jira only
 ```
 
 ---
@@ -231,3 +259,32 @@ The **Blockers** section in `standup` output surfaces two conditions automatical
 - **Stalled Peer Review** — any ticket in a `peerReview` status that hasn't been updated in more than 3 days
 
 No manual input required — these are derived from your live Jira ticket state.
+
+---
+
+## CLONE Tickets
+
+If your Jira environment uses an automation that copies service desk tickets into project boards (prefixed with `CLONE -`), you can view them with:
+
+```bash
+standup clones               # Last 100 CLONE tickets across all projects
+standup clones --proj SD     # Filter to a specific project
+```
+
+This command makes a live Jira API call and displays a table with the ticket key (hyperlinked), current status, creation date, and summary.
+
+---
+
+## Filtering Flags
+
+These flags work with `standup` and `clones`:
+
+| Flag | Description |
+|---|---|
+| `--jira` | Show only Jira activity (standup: hides GitHub section) |
+| `--git` | Show only GitHub activity (standup: hides Jira, Today, Blockers) |
+| `--allusers` | Live cross-team Jira query — all users, up to 100 tickets. **Jira only** — see note below. |
+| `--proj KEY` | Filter Jira events and tickets to project `KEY` (e.g. `--proj MYPROJ`) |
+| `--repo NAME` | Filter GitHub events to repos where the name contains `NAME` as a substring |
+
+**`--allusers` and GitHub:** GitHub personal access tokens are scoped to the authenticated user — the API only returns events for that account. `--allusers` therefore applies to Jira only. Using `--allusers --git` is an error. Without `--jira`, the GitHub section is still shown but labeled `GitHub (your activity):` to make the scope clear.

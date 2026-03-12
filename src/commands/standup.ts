@@ -1,18 +1,27 @@
 import chalk from 'chalk';
 import { loadConfig, Config } from '../config';
-import { getGithubEventsSince, getJiraEventsSince, getTicketsByStatuses } from '../db';
+import { getGithubEventsSince, getJiraEventsSince, getTicketsByStatuses, JiraEvent, GithubEvent } from '../db';
 import { getLookbackDate, getCustomLookbackDate, isMonday, formatDisplayDate, formatShortDate, formatTimestamp } from '../utils/time';
 import { transformGithubEvents, transformJiraEvents, StandupItem } from '../utils/fakeit';
 import { isIgnoredRepo } from '../github';
 import { hyperlink } from '../utils/format';
+import { fetchAllUsersJiraEvents } from '../jira';
 
-export function runStandup(fakeit: boolean, days?: number): void {
+export interface StandupOptions {
+  fakeit?: boolean;
+  days?: number;
+  allUsers?: boolean;
+  jiraOnly?: boolean;
+  gitOnly?: boolean;
+  proj?: string;
+  repo?: string;
+}
+
+export async function runStandup(opts: StandupOptions = {}): Promise<void> {
+  const { fakeit = false, days, allUsers = false, jiraOnly = false, gitOnly = false, proj, repo } = opts;
   const config = loadConfig();
   const since = days !== undefined ? getCustomLookbackDate(days) : getLookbackDate();
   const monday = days === undefined && isMonday();
-
-  const githubEvents = getGithubEventsSince(since).filter(e => !isIgnoredRepo(e.repo, config));
-  const jiraEvents = getJiraEventsSince(since);
 
   const header = chalk.bold.cyan(`\n=== STANDUP — ${formatDisplayDate(new Date())} ===`);
   const period = days !== undefined
@@ -21,8 +30,42 @@ export function runStandup(fakeit: boolean, days?: number): void {
       ? chalk.gray(`  (covering Thu ${formatShortDate(since)} — today)`)
       : chalk.gray(`  (since yesterday)`);
 
+  const scopeParts: string[] = [];
+  if (allUsers) scopeParts.push('Jira: all users (live query)');
+  if (proj) scopeParts.push(`project: ${proj.toUpperCase()}`);
+  if (repo) scopeParts.push(`repo: ~${repo}`);
+  const scopeNote = scopeParts.length > 0 ? chalk.dim(`  [${scopeParts.join(', ')}]`) : '';
+
   console.log(header);
   console.log(period);
+  if (scopeNote) console.log(scopeNote);
+
+  const showGit = !jiraOnly;
+  const showJira = !gitOnly;
+
+  // --- GITHUB EVENTS ---
+  let githubEvents: GithubEvent[] = [];
+  if (showGit) {
+    githubEvents = getGithubEventsSince(since).filter(e => !isIgnoredRepo(e.repo, config));
+    if (repo) {
+      const repoFilter = repo.toLowerCase();
+      githubEvents = githubEvents.filter(e => e.repo.toLowerCase().includes(repoFilter));
+    }
+  }
+
+  // --- JIRA EVENTS ---
+  let jiraEvents: JiraEvent[] = [];
+  if (showJira) {
+    if (allUsers) {
+      jiraEvents = await fetchAllUsersJiraEvents(config, since);
+    } else {
+      jiraEvents = getJiraEventsSince(since);
+    }
+    if (proj) {
+      const projPrefix = proj.toUpperCase() + '-';
+      jiraEvents = jiraEvents.filter(e => e.ticket_key.startsWith(projPrefix));
+    }
+  }
 
   // --- YESTERDAY / SINCE THURSDAY ---
   const sinceLabel = days !== undefined ? `Last ${days} day${days === 1 ? '' : 's'}` : monday ? `Since Thursday` : `Yesterday`;
@@ -36,71 +79,93 @@ export function runStandup(fakeit: boolean, days?: number): void {
       const jiraItems = transformJiraEvents(jiraEvents);
       printFakeitItems([...jiraItems, ...ghItems], config.jira.domain);
     } else {
-      printGithubEvents(githubEvents, config);
-      printJiraEvents(jiraEvents, config.jira.email, config.jira.domain);
+      if (showGit) printGithubEvents(githubEvents, config, allUsers);
+      if (showJira) printJiraEvents(jiraEvents, config.jira.email, config.jira.domain, allUsers);
     }
   }
 
+  // Today/Blockers read from DB (current user's tickets only)
+  if (allUsers) {
+    console.log(chalk.dim('\n  (Today and Blockers reflect your assigned tickets only — omit --allusers for full standup view)\n'));
+    return;
+  }
+
   // --- TODAY ---
-  console.log(chalk.bold.yellow(`\nToday:`));
+  if (showJira) {
+    console.log(chalk.bold.yellow(`\nToday:`));
 
-  const todoStatuses = [
-    ...config.jira.statuses.inDevelopment,
-    ...config.jira.statuses.qaTestFailed,
-    ...config.jira.statuses.peerReview,
-  ];
-  const todayTickets = getTicketsByStatuses(todoStatuses);
+    const todoStatuses = [
+      ...config.jira.statuses.inDevelopment,
+      ...config.jira.statuses.qaTestFailed,
+      ...config.jira.statuses.peerReview,
+    ];
+    let todayTickets = getTicketsByStatuses(todoStatuses);
+    if (proj) {
+      const projPrefix = proj.toUpperCase() + '-';
+      todayTickets = todayTickets.filter(t => t.key.startsWith(projPrefix));
+    }
 
-  if (todayTickets.length === 0) {
-    console.log(chalk.gray('  No active tickets.'));
-  } else {
-    for (const t of todayTickets) {
-      const statusColor = getStatusColor(t.status, config);
-      const statusLabel = statusColor(`[${t.status}]`);
-      const sprintBadge = t.sprint ? chalk.dim(` {${t.sprint}}`) : '';
-      const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
-      if (fakeit) {
-        const action = getFakeitTodayAction(t.status, config);
-        const keyLink = hyperlink(chalk.bold(t.key), ticketUrl);
-        console.log(`  • ${action} [${keyLink}]${sprintBadge} — ${t.summary}`);
-      } else {
-        const keyLink = hyperlink(chalk.bold(t.key), ticketUrl);
-        console.log(`  • ${statusLabel} [${keyLink}]${sprintBadge} — ${t.summary}`);
+    if (todayTickets.length === 0) {
+      console.log(chalk.gray('  No active tickets.'));
+    } else {
+      for (const t of todayTickets) {
+        const statusColor = getStatusColor(t.status, config);
+        const statusLabel = statusColor(`[${t.status}]`);
+        const sprintBadge = t.sprint ? chalk.dim(` {${t.sprint}}`) : '';
+        const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
+        if (fakeit) {
+          const action = getFakeitTodayAction(t.status, config);
+          const keyLink = hyperlink(chalk.bold(t.key), ticketUrl);
+          console.log(`  • ${action} [${keyLink}]${sprintBadge} — ${t.summary}`);
+        } else {
+          const keyLink = hyperlink(chalk.bold(t.key), ticketUrl);
+          console.log(`  • ${statusLabel} [${keyLink}]${sprintBadge} — ${t.summary}`);
+        }
       }
     }
   }
 
   // --- BLOCKERS ---
-  console.log(chalk.bold.yellow(`\nBlockers:`));
-  const qaFailed = getTicketsByStatuses(config.jira.statuses.qaTestFailed);
-  const stalePeerReview = getTicketsByStatuses(config.jira.statuses.peerReview).filter(t => {
-    const daysOld = (Date.now() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24);
-    return daysOld > 3;
-  });
+  if (showJira) {
+    console.log(chalk.bold.yellow(`\nBlockers:`));
 
-  if (qaFailed.length === 0 && stalePeerReview.length === 0) {
-    console.log(chalk.gray('  None'));
-  } else {
-    for (const t of qaFailed) {
-      const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
-      const keyLink = hyperlink(t.key, ticketUrl);
-      console.log(chalk.red(`  • [${keyLink}] QA Test Failed — ${t.summary}`));
+    let qaFailed = getTicketsByStatuses(config.jira.statuses.qaTestFailed);
+    let stalePeerReview = getTicketsByStatuses(config.jira.statuses.peerReview).filter(t => {
+      const daysOld = (Date.now() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24);
+      return daysOld > 3;
+    });
+
+    if (proj) {
+      const projPrefix = proj.toUpperCase() + '-';
+      qaFailed = qaFailed.filter(t => t.key.startsWith(projPrefix));
+      stalePeerReview = stalePeerReview.filter(t => t.key.startsWith(projPrefix));
     }
-    for (const t of stalePeerReview) {
-      const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
-      const keyLink = hyperlink(t.key, ticketUrl);
-      const days = Math.floor((Date.now() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
-      console.log(chalk.yellow(`  • [${keyLink}] Peer Review stalled (${days}d) — ${t.summary}`));
+
+    if (qaFailed.length === 0 && stalePeerReview.length === 0) {
+      console.log(chalk.gray('  None'));
+    } else {
+      for (const t of qaFailed) {
+        const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
+        const keyLink = hyperlink(t.key, ticketUrl);
+        console.log(chalk.red(`  • [${keyLink}] QA Test Failed — ${t.summary}`));
+      }
+      for (const t of stalePeerReview) {
+        const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
+        const keyLink = hyperlink(t.key, ticketUrl);
+        const daysStale = Math.floor((Date.now() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
+        console.log(chalk.yellow(`  • [${keyLink}] Peer Review stalled (${daysStale}d) — ${t.summary}`));
+      }
     }
   }
 
   console.log('');
 }
 
-function printGithubEvents(events: ReturnType<typeof getGithubEventsSince>, config: Config): void {
+function printGithubEvents(events: GithubEvent[], config: Config, allUsers = false): void {
   if (events.length === 0) return;
 
-  console.log(chalk.dim('  GitHub:'));
+  const label = allUsers ? '  GitHub (your activity):' : '  GitHub:';
+  console.log(chalk.dim(label));
   for (const e of events) {
     const ts = chalk.dim(formatTimestamp(e.created_at));
     const repoShort = e.repo.split('/')[1] ?? e.repo;
@@ -134,7 +199,7 @@ function trunc(s: string, len: number): string {
   return s.length > len ? s.slice(0, len - 1) + '…' : s;
 }
 
-function printJiraEvents(events: ReturnType<typeof getJiraEventsSince>, myEmail: string, jiraDomain: string): void {
+function printJiraEvents(events: JiraEvent[], myEmail: string, jiraDomain: string, allUsers = false): void {
   if (events.length === 0) return;
 
   console.log(chalk.dim('  Jira:'));
@@ -147,12 +212,21 @@ function printJiraEvents(events: ReturnType<typeof getJiraEventsSince>, myEmail:
     if (e.event_type === 'status_change') {
       const from = chalk.yellow(e.old_value ?? '?');
       const to = chalk.green(e.new_value ?? '?');
-      const who = e.author_email === '__automation__' ? chalk.dim(' (automation)') : '';
+      let who: string;
+      if (allUsers && e.author_email && e.author_email !== '__automation__') {
+        who = chalk.dim(` (${e.author_email.split('@')[0]})`);
+      } else if (e.author_email === '__automation__' || (allUsers && !e.author_email)) {
+        who = chalk.dim(' (automation)');
+      } else {
+        who = '';
+      }
       console.log(`    ${ts} [${key}] ${from} → ${to}${who}${summary}`);
     } else if (e.event_type === 'comment') {
-      console.log(`    ${ts} [${key}] Added comment${summary}`);
+      const who = allUsers && e.author_email ? chalk.dim(` (${e.author_email.split('@')[0]})`) : '';
+      console.log(`    ${ts} [${key}] Added comment${who}${summary}`);
     } else if (e.event_type === 'created') {
-      console.log(`    ${ts} [${key}] Created ticket${summary}`);
+      const who = allUsers && e.author_email ? chalk.dim(` (${e.author_email.split('@')[0]})`) : '';
+      console.log(`    ${ts} [${key}] Created ticket${who}${summary}`);
     }
   }
 }

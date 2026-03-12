@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { Config, allTrackedStatuses } from './config';
-import { insertJiraEvent, upsertJiraTicket, removeStaleTickets, getMeta, setMeta } from './db';
+import { insertJiraEvent, upsertJiraTicket, removeStaleTickets, getMeta, setMeta, JiraEvent } from './db';
 
 function makeClient(config: Config): AxiosInstance {
   const token = Buffer.from(`${config.jira.email}:${config.jira.apiToken}`).toString('base64');
@@ -262,6 +262,43 @@ function extractSprint(field: unknown): string | null {
   const target = active ?? sprints[sprints.length - 1];
 
   return target ? String(target['name'] ?? '') : null;
+}
+
+export async function fetchAllUsersJiraEvents(config: Config, since: Date): Promise<JiraEvent[]> {
+  const client = makeClient(config);
+  const sprintField = config.jira.customFields.sprint;
+  const spField = config.jira.customFields.storyPoints;
+  const projFilter = projectClause(config);
+  const sinceStr = since.toISOString().split('T')[0];
+
+  const jql = `updated >= "${sinceStr}"${projFilter} ORDER BY updated DESC`;
+  const issues = await searchIssues(client, jql, spField, sprintField, true);
+  const limited = issues.slice(0, 100);
+
+  const events: JiraEvent[] = [];
+  for (const issue of limited) {
+    if (!issue.changelog?.histories) continue;
+    for (const history of issue.changelog.histories) {
+      const historyDate = new Date(history.created);
+      if (historyDate <= since) continue;
+      for (const item of history.items) {
+        if (item.field === 'status') {
+          events.push({
+            id: `allusers-status-${issue.key}-${history.id}`,
+            ticket_key: issue.key,
+            ticket_summary: String(issue.fields['summary'] ?? ''),
+            event_type: 'status_change',
+            old_value: item.fromString,
+            new_value: item.toString,
+            author_email: history.author?.emailAddress ?? null,
+            created_at: history.created,
+          });
+        }
+      }
+    }
+  }
+
+  return events.sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 function log(msg: string): void {
