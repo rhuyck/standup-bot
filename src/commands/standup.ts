@@ -1,9 +1,10 @@
 import chalk from 'chalk';
-import { loadConfig } from '../config';
+import { loadConfig, Config } from '../config';
 import { getGithubEventsSince, getJiraEventsSince, getTicketsByStatuses } from '../db';
 import { getLookbackDate, getCustomLookbackDate, isMonday, formatDisplayDate, formatShortDate, formatTimestamp } from '../utils/time';
 import { transformGithubEvents, transformJiraEvents, StandupItem } from '../utils/fakeit';
 import { isIgnoredRepo } from '../github';
+import { hyperlink } from '../utils/format';
 
 export function runStandup(fakeit: boolean, days?: number): void {
   const config = loadConfig();
@@ -33,10 +34,10 @@ export function runStandup(fakeit: boolean, days?: number): void {
     if (fakeit) {
       const ghItems = transformGithubEvents(githubEvents);
       const jiraItems = transformJiraEvents(jiraEvents);
-      printFakeitItems([...jiraItems, ...ghItems]);
+      printFakeitItems([...jiraItems, ...ghItems], config.jira.domain);
     } else {
-      printGithubEvents(githubEvents);
-      printJiraEvents(jiraEvents, config.jira.email);
+      printGithubEvents(githubEvents, config);
+      printJiraEvents(jiraEvents, config.jira.email, config.jira.domain);
     }
   }
 
@@ -57,11 +58,14 @@ export function runStandup(fakeit: boolean, days?: number): void {
       const statusColor = getStatusColor(t.status, config);
       const statusLabel = statusColor(`[${t.status}]`);
       const sprintBadge = t.sprint ? chalk.dim(` {${t.sprint}}`) : '';
+      const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
       if (fakeit) {
         const action = getFakeitTodayAction(t.status, config);
-        console.log(`  • ${action} [**${t.key}**]${sprintBadge} — ${t.summary}`);
+        const keyLink = hyperlink(chalk.bold(t.key), ticketUrl);
+        console.log(`  • ${action} [${keyLink}]${sprintBadge} — ${t.summary}`);
       } else {
-        console.log(`  • ${statusLabel} [${chalk.bold(t.key)}]${sprintBadge} — ${t.summary}`);
+        const keyLink = hyperlink(chalk.bold(t.key), ticketUrl);
+        console.log(`  • ${statusLabel} [${keyLink}]${sprintBadge} — ${t.summary}`);
       }
     }
   }
@@ -78,36 +82,50 @@ export function runStandup(fakeit: boolean, days?: number): void {
     console.log(chalk.gray('  None'));
   } else {
     for (const t of qaFailed) {
-      console.log(chalk.red(`  • [${t.key}] QA Test Failed — ${t.summary}`));
+      const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
+      const keyLink = hyperlink(t.key, ticketUrl);
+      console.log(chalk.red(`  • [${keyLink}] QA Test Failed — ${t.summary}`));
     }
     for (const t of stalePeerReview) {
-      console.log(chalk.yellow(`  • [${t.key}] Peer Review stalled (${Math.floor((Date.now() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24))}d) — ${t.summary}`));
+      const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
+      const keyLink = hyperlink(t.key, ticketUrl);
+      const days = Math.floor((Date.now() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
+      console.log(chalk.yellow(`  • [${keyLink}] Peer Review stalled (${days}d) — ${t.summary}`));
     }
   }
 
   console.log('');
 }
 
-function printGithubEvents(events: ReturnType<typeof getGithubEventsSince>): void {
+function printGithubEvents(events: ReturnType<typeof getGithubEventsSince>, config: Config): void {
   if (events.length === 0) return;
 
   console.log(chalk.dim('  GitHub:'));
   for (const e of events) {
     const ts = chalk.dim(formatTimestamp(e.created_at));
-    const repo = chalk.cyan(e.repo.split('/')[1] ?? e.repo);
+    const repoShort = e.repo.split('/')[1] ?? e.repo;
+    const repo = chalk.cyan(repoShort);
     if (e.type === 'push') {
       const isMain = e.branch === 'main' || e.branch === 'master';
-      const branch = isMain ? chalk.magenta.bold(e.branch ?? '?') : chalk.blue(e.branch ?? '?');
+      const branchName = e.branch ?? '?';
+      const branchUrl = `https://github.com/${e.repo}/tree/${branchName}`;
+      const branchColored = isMain ? chalk.magenta.bold(branchName) : chalk.blue(branchName);
+      const branch = hyperlink(branchColored, branchUrl);
       const msg = e.message ? chalk.dim(` "${trunc(e.message, 75)}"`) : '';
       console.log(`    ${ts} Pushed ${e.commit_count} commit(s) to ${branch} in ${repo}${msg}`);
     } else if (e.type === 'branch_created') {
-      console.log(`    ${ts} Created branch ${chalk.blue(e.branch ?? '?')} in ${repo}`);
+      const branchName = e.branch ?? '?';
+      const branchUrl = `https://github.com/${e.repo}/tree/${branchName}`;
+      const branch = hyperlink(chalk.blue(branchName), branchUrl);
+      console.log(`    ${ts} Created branch ${branch} in ${repo}`);
     } else if (e.type === 'pr_merged') {
       const title = e.pr_title ? ` ${chalk.green(trunc(e.pr_title, 75))}` : '';
-      console.log(`    ${ts} Merged PR #${e.pr_number} in ${repo}:${title}`);
+      const prLink = hyperlink(`#${e.pr_number}`, `https://github.com/${e.repo}/pull/${e.pr_number}`);
+      console.log(`    ${ts} Merged PR ${prLink} in ${repo}:${title}`);
     } else if (e.type === 'pr_opened') {
       const title = e.pr_title ? ` ${trunc(e.pr_title, 75)}` : '';
-      console.log(`    ${ts} Opened PR #${e.pr_number} in ${repo}:${title}`);
+      const prLink = hyperlink(`#${e.pr_number}`, `https://github.com/${e.repo}/pull/${e.pr_number}`);
+      console.log(`    ${ts} Opened PR ${prLink} in ${repo}:${title}`);
     }
   }
 }
@@ -116,13 +134,14 @@ function trunc(s: string, len: number): string {
   return s.length > len ? s.slice(0, len - 1) + '…' : s;
 }
 
-function printJiraEvents(events: ReturnType<typeof getJiraEventsSince>, myEmail: string): void {
+function printJiraEvents(events: ReturnType<typeof getJiraEventsSince>, myEmail: string, jiraDomain: string): void {
   if (events.length === 0) return;
 
   console.log(chalk.dim('  Jira:'));
   for (const e of events) {
     const ts = chalk.dim(formatTimestamp(e.created_at));
-    const key = chalk.bold(e.ticket_key);
+    const ticketUrl = `https://${jiraDomain}/browse/${e.ticket_key}`;
+    const key = hyperlink(chalk.bold(e.ticket_key), ticketUrl);
     const summary = chalk.dim(` — ${e.ticket_summary ?? ''}`);
 
     if (e.event_type === 'status_change') {
@@ -138,10 +157,13 @@ function printJiraEvents(events: ReturnType<typeof getJiraEventsSince>, myEmail:
   }
 }
 
-function printFakeitItems(items: StandupItem[]): void {
+function printFakeitItems(items: StandupItem[], jiraDomain: string): void {
   for (const item of items) {
     const ts = item.timestamp ? chalk.dim(formatTimestamp(item.timestamp)) + ' ' : '';
     const text = item.text
+      .replace(/\*\*([A-Z][A-Z0-9]+-\d+)\*\*/g, (_, key) =>
+        chalk.bold(hyperlink(key, `https://${jiraDomain}/browse/${key}`))
+      )
       .replace(/\*\*(.+?)\*\*/g, (_, s) => chalk.bold(s))
       .replace(/\*(.+?)\*/g, (_, s) => chalk.italic(s))
       .replace(/`(.+?)`/g, (_, s) => chalk.cyan(s));
