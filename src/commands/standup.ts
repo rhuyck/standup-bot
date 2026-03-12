@@ -129,6 +129,7 @@ export async function runStandup(opts: StandupOptions = {}): Promise<void> {
   if (showJira) {
     console.log(chalk.bold.yellow(`\nBlockers:`));
 
+    let blocked = getTicketsByStatuses(config.jira.statuses.blocked ?? []);
     let qaFailed = getTicketsByStatuses(config.jira.statuses.qaTestFailed);
     let stalePeerReview = getTicketsByStatuses(config.jira.statuses.peerReview).filter(t => {
       const daysOld = (Date.now() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24);
@@ -137,13 +138,19 @@ export async function runStandup(opts: StandupOptions = {}): Promise<void> {
 
     if (proj) {
       const projPrefix = proj.toUpperCase() + '-';
+      blocked = blocked.filter(t => t.key.startsWith(projPrefix));
       qaFailed = qaFailed.filter(t => t.key.startsWith(projPrefix));
       stalePeerReview = stalePeerReview.filter(t => t.key.startsWith(projPrefix));
     }
 
-    if (qaFailed.length === 0 && stalePeerReview.length === 0) {
+    if (blocked.length === 0 && qaFailed.length === 0 && stalePeerReview.length === 0) {
       console.log(chalk.gray('  None'));
     } else {
+      for (const t of blocked) {
+        const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
+        const keyLink = hyperlink(t.key, ticketUrl);
+        console.log(chalk.red(`  • [${keyLink}] Blocked — ${t.summary}`));
+      }
       for (const t of qaFailed) {
         const ticketUrl = `https://${config.jira.domain}/browse/${t.key}`;
         const keyLink = hyperlink(t.key, ticketUrl);
