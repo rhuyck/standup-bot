@@ -9,15 +9,18 @@
     "email": "you@yourcompany.com",
     "apiToken": "YOUR_JIRA_API_TOKEN",
     "project": [],
-    "ignoreProjects": [],
+    "ignoreProjects": ["OPS","SBST","SEC","BL"],
     "customFields": {
       "storyPoints": "customfield_10106",
-      "sprint": "customfield_10020"
+      "sprint": "customfield_10020",
+      "severity": "customfield_10131",
+      "onCall": "customfield_10411"
     },
     "statuses": {
       "todo": ["To Do", "To-Do", "Open"],
       "inDevelopment": ["In Development", "In Progress", "In-Development"],
       "qaTestFailed": ["QA Test Failed"],
+      "blocked": ["Blocked"],
       "peerReview": ["Peer Review"],
       "readyForQA": ["Ready for QA", "QA In Progress"],
       "done": ["Done", "Closed", "Resolved"]

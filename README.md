@@ -76,6 +76,7 @@ curl -u YOUR_EMAIL:YOUR_API_TOKEN \
 ```
 
 Look for entries like:
+
 - `"customfield_10106"` — story points (often labeled "Story Points" or "Story point estimate")
 - `"customfield_10020"` — sprint
 
@@ -110,12 +111,14 @@ nano ~/.standup-bot/config.json
     "ignoreProjects": [],
     "customFields": {
       "storyPoints": "customfield_10106",
-      "sprint": "customfield_10020"
+      "sprint": "customfield_10020",
+      "severity": "customfield_10131"
     },
     "statuses": {
       "todo": ["To Do", "To-Do", "Open"],
       "inDevelopment": ["In Development", "In Progress", "In-Development"],
       "qaTestFailed": ["QA Test Failed"],
+      "blocked": ["Blocked"],
       "peerReview": ["Peer Review"],
       "readyForQA": ["Ready for QA", "QA In Progress"],
       "done": ["Done", "Closed", "Resolved"]
@@ -128,6 +131,7 @@ nano ~/.standup-bot/config.json
 ```
 
 **Notes:**
+
 - `project` can be an empty array `[]` (tracks all projects) or a list of keys: `["PROJ", "INFRA"]`
 - `ignoreProjects` excludes specific Jira project keys regardless of `project`: `["ARCHV", "TEMP"]`
 - `ignoreRepos` excludes GitHub repos from polling and standup output. Accepts full `owner/repo` or just `repo` name: `["acme-org/legacy-app", "sandbox"]`
@@ -151,6 +155,7 @@ bash scripts/install.sh
 ```
 
 The installer will:
+
 1. Run `npm install` and compile TypeScript
 2. Link the `standup` command globally via `npm link`
 3. Copy `config.json` to `~/.standup-bot/config.json` if it doesn't exist yet
@@ -223,13 +228,13 @@ standup poll --jira           # Jira only
 
 ## File Locations
 
-| Path | Description |
-|---|---|
-| `~/.standup-bot/config.json` | Your credentials and settings |
-| `~/.standup-bot/standup.db` | Local SQLite database |
-| `~/.standup-bot/daemon.log` | Daemon output log |
-| `~/.standup-bot/daemon-error.log` | Daemon error log |
-| `~/Library/LaunchAgents/com.standup-bot.daemon.plist` | launchd agent definition |
+| Path                                                  | Description                   |
+| ----------------------------------------------------- | ----------------------------- |
+| `~/.standup-bot/config.json`                          | Your credentials and settings |
+| `~/.standup-bot/standup.db`                           | Local SQLite database         |
+| `~/.standup-bot/daemon.log`                           | Daemon output log             |
+| `~/.standup-bot/daemon-error.log`                     | Daemon error log              |
+| `~/Library/LaunchAgents/com.standup-bot.daemon.plist` | launchd agent definition      |
 
 ---
 
@@ -279,12 +284,12 @@ This command makes a live Jira API call and displays a table with the ticket key
 
 These flags work with `standup` and `clones`:
 
-| Flag | Description |
-|---|---|
-| `--jira` | Show only Jira activity (standup: hides GitHub section) |
-| `--git` | Show only GitHub activity (standup: hides Jira, Today, Blockers) |
-| `--allusers` | Live cross-team Jira query — all users, up to 100 tickets. **Jira only** — see note below. |
-| `--proj KEY` | Filter Jira events and tickets to project `KEY` (e.g. `--proj MYPROJ`) |
-| `--repo NAME` | Filter GitHub events to repos where the name contains `NAME` as a substring |
+| Flag          | Description                                                                                |
+| ------------- | ------------------------------------------------------------------------------------------ |
+| `--jira`      | Show only Jira activity (standup: hides GitHub section)                                    |
+| `--git`       | Show only GitHub activity (standup: hides Jira, Today, Blockers)                           |
+| `--allusers`  | Live cross-team Jira query — all users, up to 100 tickets. **Jira only** — see note below. |
+| `--proj KEY`  | Filter Jira events and tickets to project `KEY` (e.g. `--proj MYPROJ`)                     |
+| `--repo NAME` | Filter GitHub events to repos where the name contains `NAME` as a substring                |
 
 **`--allusers` and GitHub:** GitHub personal access tokens are scoped to the authenticated user — the API only returns events for that account. `--allusers` therefore applies to Jira only. Using `--allusers --git` is an error. Without `--jira`, the GitHub section is still shown but labeled `GitHub (your activity):` to make the scope clear.
