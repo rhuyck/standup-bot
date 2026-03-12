@@ -13,6 +13,7 @@ export interface JiraStatuses {
   qaTestFailed: string[];
   peerReview: string[];
   readyForQA: string[];
+  blocked: string[];
   done: string[];
 }
 
@@ -77,5 +78,6 @@ export function allTrackedStatuses(config: Config): string[] {
     ...s.qaTestFailed,
     ...s.peerReview,
     ...s.readyForQA,
+    ...s.blocked
   ];
 }
