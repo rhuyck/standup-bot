@@ -1,0 +1,109 @@
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; height: 100%;
+  background: #0a0a12;
+  overflow: hidden;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+#map { position: absolute; inset: 0; }
+
+/* ── SVG drawing overlay ── */
+#draw-overlay {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+#draw-overlay.drawing { pointer-events: all; cursor: crosshair; }
+
+/* ── Top bar ── */
+#ui-top {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: 10px 14px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.72) 60%, transparent);
+  display: flex; align-items: center; gap: 10px;
+  pointer-events: none; z-index: 20;
+}
+#title {
+  color: #00d4ff; font-size: 12px; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase; flex: 1;
+}
+#status { color: rgba(255,255,255,0.65); font-size: 10px; letter-spacing: 0.5px; }
+
+#toggle-btn {
+  pointer-events: all;
+  background: #00d4ff; color: #000a12; border: none;
+  border-radius: 5px; padding: 8px 14px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.8px;
+  cursor: pointer; transition: background 0.15s, transform 0.1s;
+  white-space: nowrap; text-transform: uppercase;
+}
+#toggle-btn:hover  { background: #33dfff; }
+#toggle-btn:active { transform: scale(0.96); }
+#toggle-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Drawing toolbar ── */
+#draw-toolbar {
+  position: absolute; top: 60px; right: 14px;
+  display: flex; flex-direction: column; gap: 4px;
+  background: rgba(5,10,20,0.88); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px; padding: 8px 6px; z-index: 20;
+}
+#draw-toolbar hr { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 2px 0; }
+.tool-btn {
+  width: 32px; height: 32px;
+  background: transparent; border: 1px solid transparent;
+  border-radius: 5px; color: rgba(255,255,255,0.6);
+  font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.tool-btn:hover  { background: rgba(255,255,255,0.08); color: #fff; }
+.tool-btn.active { background: rgba(0,212,255,0.18); border-color: rgba(0,212,255,0.5); color: #00d4ff; }
+.tool-btn.danger:hover { background: rgba(255,80,80,0.18); color: #ff6b6b; }
+
+/* ── Bottom legend ── */
+#legend {
+  position: absolute; bottom: 30px; left: 14px;
+  background: rgba(5,10,20,0.82); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 7px; padding: 10px 14px; z-index: 20;
+  color: rgba(255,255,255,0.8); font-size: 10px; line-height: 1.8;
+}
+#legend .row { display: flex; align-items: center; gap: 8px; }
+.swatch-box  { width: 12px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.swatch-line { width: 16px; height: 2px; flex-shrink: 0; }
+.swatch-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── Mode badge ── */
+#mode-badge {
+  position: absolute; bottom: 30px; right: 14px;
+  background: rgba(5,10,20,0.82); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 7px; padding: 8px 14px; z-index: 20;
+  font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase;
+  transition: color 0.4s;
+}
+#mode-badge.mode-2d { color: #ffcc00; }
+#mode-badge.mode-3d { color: #00d4ff; }
+
+/* ── Loader spinner ── */
+#loader {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  display: none; flex-direction: column; align-items: center; gap: 10px;
+  z-index: 30; pointer-events: none;
+}
+#loader.visible { display: flex; }
+.spinner {
+  width: 28px; height: 28px;
+  border: 3px solid rgba(0,212,255,0.2);
+  border-top-color: #00d4ff;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loader-text { color: #00d4ff; font-size: 11px; letter-spacing: 1px; }
+
+/* ── Attribution override ── */
+.maplibregl-ctrl-attrib { font-size: 9px !important; }
