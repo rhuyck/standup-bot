@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Potree × Maplibre — 2D/3D PoC</title>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #0a0a12; overflow: hidden;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; }
+
+    #map { position: absolute; inset: 0; }
+
+    /* ── Top bar ── */
+    #ui-top {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 10px 14px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.72) 60%, transparent);
+      display: flex; align-items: center; gap: 10px;
+      pointer-events: none; z-index: 20;
+    }
+    #title {
+      color: #00d4ff; font-size: 12px; font-weight: 700;
+      letter-spacing: 1.5px; text-transform: uppercase; flex: 1;
+    }
+    #status {
+      color: rgba(255,255,255,0.65); font-size: 10px; letter-spacing: 0.5px;
+    }
+    #toggle-btn {
+      pointer-events: all;
+      background: #00d4ff; color: #000a12; border: none;
+      border-radius: 5px; padding: 8px 14px;
+      font-size: 11px; font-weight: 800; letter-spacing: 0.8px;
+      cursor: pointer; transition: background 0.15s, transform 0.1s;
+      white-space: nowrap; text-transform: uppercase;
+    }
+    #toggle-btn:hover  { background: #33dfff; }
+    #toggle-btn:active { transform: scale(0.96); }
+    #toggle-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Bottom legend ── */
+    #legend {
+      position: absolute; bottom: 30px; left: 14px;
+      background: rgba(5,10,20,0.82); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 7px; padding: 10px 14px; z-index: 20;
+      color: rgba(255,255,255,0.8); font-size: 10px; line-height: 1.8;
+    }
+    #legend .row { display: flex; align-items: center; gap: 8px; }
+    .swatch-box  { width: 12px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+    .swatch-line { width: 16px; height: 2px; flex-shrink: 0; }
+    .swatch-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Mode badge ── */
+    #mode-badge {
+      position: absolute; bottom: 30px; right: 14px;
+      background: rgba(5,10,20,0.82); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 7px; padding: 8px 14px; z-index: 20;
+      font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase;
+      transition: color 0.4s;
+    }
+    #mode-badge.mode-2d { color: #ffcc00; }
+    #mode-badge.mode-3d { color: #00d4ff; }
+
+    /* ── Loader spinner ── */
+    #loader {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      display: none; flex-direction: column; align-items: center; gap: 10px;
+      z-index: 30; pointer-events: none;
+    }
+    #loader.visible { display: flex; }
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid rgba(0,212,255,0.2);
+      border-top-color: #00d4ff;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loader-text { color: #00d4ff; font-size: 11px; letter-spacing: 1px; }
+
+    /* ── Attribution override ── */
+    .maplibregl-ctrl-attrib { font-size: 9px !important; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="ui-top">
+    <div id="title">Potree × Maplibre</div>
+    <div id="status">2D — Satellite + Site Plan</div>
+    <button id="toggle-btn">View in 3D →</button>
+  </div>
+
+  <div id="legend">
+    <div class="row"><div class="swatch-line" style="background:#ffdd00"></div> Site boundary</div>
+    <div class="row"><div class="swatch-box"  style="background:rgba(34,238,136,0.6)"></div> Building footprints</div>
+    <div class="row"><div class="swatch-dot"  style="background:#00d4ff"></div> LiDAR point cloud</div>
+  </div>
+
+  <div id="mode-badge" class="mode-2d">2D</div>
+
+  <div id="loader">
+    <div class="spinner"></div>
+    <div id="loader-text">Loading point cloud…</div>
+  </div>
+
+  <!-- ES Module imports for Three.js -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://esm.sh/three@0.168.0",
+      "three/addons/": "https://esm.sh/three@0.168.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // ─── CONSTANTS ──────────────────────────────────────────────────────────────
+    // Columbus, OH downtown — USGS 3DEP data coverage area
+    const CENTER_LNG   = -83.0007;
+    const CENTER_LAT   =  39.9612;
+    const INIT_ZOOM    = 15.4;
+    const POINT_COUNT  = 180_000;
+
+    // ─── MAP ────────────────────────────────────────────────────────────────────
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: {
+        version: 8,
+        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+        sources: {
+          satellite: {
+            type: 'raster',
+            // ESRI World Imagery — public, no API key required
+            tiles: [
+              'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+            ],
+            tileSize: 256,
+            maxzoom: 19,
+            attribution: 'Tiles © Esri — Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN'
+          }
+        },
+        layers: [{ id: 'satellite', type: 'raster', source: 'satellite' }]
+      },
+      center: [CENTER_LNG, CENTER_LAT],
+      zoom: INIT_ZOOM,
+      pitch: 0,
+      bearing: 0,
+      antialias: true
+    });
+
+    // ─── SITE PLAN (GeoJSON) ─────────────────────────────────────────────────────
+    // Synthetic building footprints around Columbus downtown
+    function buildSitePlan() {
+      // Deterministic pseudo-random
+      let _s = 42;
+      const rng = () => { _s = (_s * 1664525 + 1013904223) & 0xffffffff; return (_s >>> 0) / 0xffffffff; };
+
+      const features = [];
+      const blocks = [
+        // [dLng, dLat, blockW, blockH, numBuildings]
+        [-0.009, -0.005, 0.006, 0.0035, 3],
+        [-0.002, -0.005, 0.005, 0.0035, 4],
+        [ 0.004, -0.005, 0.005, 0.0035, 2],
+        [-0.009,  0.000, 0.006, 0.0035, 4],
+        [-0.002,  0.000, 0.005, 0.0035, 5],
+        [ 0.004,  0.000, 0.005, 0.0035, 3],
+        [-0.009,  0.005, 0.006, 0.0035, 2],
+        [-0.002,  0.005, 0.005, 0.0035, 4],
+        [ 0.004,  0.005, 0.005, 0.0035, 3],
+      ];
+
+      for (const [dLng, dLat, bw, bh, nb] of blocks) {
+        const ox = CENTER_LNG + dLng;
+        const oy = CENTER_LAT + dLat;
+
+        // Block boundary (site plan outline)
+        features.push({
+          type: 'Feature',
+          properties: { kind: 'block' },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[[ox,oy],[ox+bw,oy],[ox+bw,oy+bh],[ox,oy+bh],[ox,oy]]]
+          }
+        });
+
+        // Buildings inside block
+        const pad = 0.0003;
+        for (let i = 0; i < nb; i++) {
+          const fw = 0.0007 + rng() * 0.0012;
+          const fh = 0.0005 + rng() * 0.0009;
+          const fx = ox + pad + rng() * Math.max(0.0001, bw - pad * 2 - fw);
+          const fy = oy + pad + rng() * Math.max(0.0001, bh - pad * 2 - fh);
+          features.push({
+            type: 'Feature',
+            properties: { kind: 'building', floors: 2 + Math.floor(rng() * 18) },
+            geometry: {
+              type: 'Polygon',
+              coordinates: [[[fx,fy],[fx+fw,fy],[fx+fw,fy+fh],[fx,fy+fh],[fx,fy]]]
+            }
+          });
+        }
+      }
+      return { type: 'FeatureCollection', features };
+    }
+
+    // ─── THREE.JS + POINT CLOUD ──────────────────────────────────────────────────
+    let threeScene, threeCamera, threeRenderer, pcMesh;
+    let threeReady = false;
+
+    function generatePointCloud(count) {
+      const positions = new Float32Array(count * 3);
+      const colors    = new Float32Array(count * 3);
+
+      // Building clusters (x=east m, z=south m from origin)
+      const clusters = [
+        { cx: -120, cz: -90,  w: 22, d: 18, h: 28 },
+        { cx:   55, cz: -130, w: 18, d: 24, h: 16 },
+        { cx:  -75, cz:  85,  w: 30, d: 20, h: 22 },
+        { cx:  145, cz:  55,  w: 16, d: 16, h: 35 },
+        { cx:  -25, cz:  25,  w: 25, d: 25, h: 12 },
+        { cx:  185, cz: -70,  w: 20, d: 15, h: 20 },
+        { cx: -165, cz: 115,  w: 24, d: 18, h: 18 },
+        { cx:   95, cz: 125,  w: 28, d: 22, h: 25 },
+        { cx: -200, cz: -55,  w: 16, d: 20, h: 30 },
+        { cx:   30, cz:  80,  w: 14, d: 14, h: 10 },
+        { cx: -100, cz: -180, w: 20, d: 16, h: 14 },
+        { cx:  120, cz: -170, w: 18, d: 18, h: 22 },
+      ];
+
+      for (let i = 0; i < count; i++) {
+        const x = (Math.random() - 0.5) * 800;
+        const z = (Math.random() - 0.5) * 800;
+
+        // Gentle terrain undulation
+        const f = 0.013;
+        const ground = Math.sin(x * f) * 3.5 + Math.cos(z * f * 1.3) * 2.8
+                     + Math.sin((x - z) * f * 0.6) * 1.5;
+
+        // Check building clusters
+        let hit = null;
+        for (const c of clusters) {
+          if (Math.abs(x - c.cx) < c.w && Math.abs(z - c.cz) < c.d) { hit = c; break; }
+        }
+
+        let y, r, g, b;
+
+        if (hit) {
+          // Mix of roof points and facade points
+          if (Math.random() < 0.55) {
+            // Roof
+            y = ground + hit.h + Math.random() * 0.4;
+            r = 0.75 + Math.random() * 0.25;
+            g = 0.72 + Math.random() * 0.25;
+            b = 0.70 + Math.random() * 0.25;
+          } else {
+            // Facade (random height up the wall)
+            y = ground + Math.random() * hit.h;
+            r = 0.55 + Math.random() * 0.25;
+            g = 0.55 + Math.random() * 0.20;
+            b = 0.55 + Math.random() * 0.20;
+          }
+        } else {
+          y = ground + Math.random() * 0.4;
+          // Ground classification: mix of pavement, vegetation, road
+          const t = Math.random();
+          if (t < 0.35) {
+            // Vegetation — green
+            r = 0.12 + Math.random() * 0.15;
+            g = 0.45 + Math.random() * 0.30;
+            b = 0.10 + Math.random() * 0.10;
+          } else if (t < 0.65) {
+            // Road / pavement — grey
+            r = g = b = 0.35 + Math.random() * 0.25;
+          } else {
+            // Bare ground — brown
+            r = 0.40 + Math.random() * 0.20;
+            g = 0.28 + Math.random() * 0.18;
+            b = 0.12 + Math.random() * 0.10;
+          }
+        }
+
+        positions[i * 3]     = x;
+        positions[i * 3 + 1] = y;
+        positions[i * 3 + 2] = z;
+        colors[i * 3]     = r;
+        colors[i * 3 + 1] = g;
+        colors[i * 3 + 2] = b;
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3));
+
+      const mat = new THREE.PointsMaterial({
+        size: 2.2,
+        vertexColors: true,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.0,
+        depthWrite: false,
+      });
+
+      return new THREE.Points(geo, mat);
+    }
+
+    // Mercator origin for coordinate bridge
+    const originMerc  = maplibregl.MercatorCoordinate.fromLngLat([CENTER_LNG, CENTER_LAT], 0);
+    const meterScale  = originMerc.meterInMercatorCoordinateUnits();
+
+    const customLayer = {
+      id: 'point-cloud',
+      type: 'custom',
+      renderingMode: '3d',
+
+      onAdd(map, gl) {
+        threeScene    = new THREE.Scene();
+        threeCamera   = new THREE.Camera();
+        threeRenderer = new THREE.WebGLRenderer({
+          canvas: map.getCanvas(),
+          context: gl,
+          antialias: true,
+        });
+        threeRenderer.autoClear = false;
+
+        // Dim ambient + warm directional for any future mesh objects
+        threeScene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const sun = new THREE.DirectionalLight(0xfff0e0, 0.7);
+        sun.position.set(1, 2, 1);
+        threeScene.add(sun);
+
+        pcMesh = generatePointCloud(POINT_COUNT);
+        threeScene.add(pcMesh);
+        threeReady = true;
+      },
+
+      render(gl, matrix) {
+        if (!threeReady) return;
+
+        // Transform: scene (meters, Y-up) → Mercator space → clip space
+        // Rotation by X PI/2 converts Three.js Y-up to Mercator Z-up
+        const rotX = new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+        const m = new THREE.Matrix4().fromArray(matrix);
+        const l = new THREE.Matrix4()
+          .makeTranslation(originMerc.x, originMerc.y, originMerc.z)
+          .scale(new THREE.Vector3(meterScale, -meterScale, meterScale))
+          .multiply(rotX);
+
+        threeCamera.projectionMatrix = m.multiply(l);
+        threeRenderer.resetState();
+        threeRenderer.render(threeScene, threeCamera);
+
+        // Keep map repainting while point cloud is visible
+        if (pcMesh && pcMesh.material.opacity > 0.01) {
+          map.triggerRepaint();
+        }
+      }
+    };
+
+    // ─── TRANSITION LOGIC ────────────────────────────────────────────────────────
+    let is3D          = false;
+    let transitioning = false;
+
+    const btn       = document.getElementById('toggle-btn');
+    const statusEl  = document.getElementById('status');
+    const loaderEl  = document.getElementById('loader');
+    const badgeEl   = document.getElementById('mode-badge');
+
+    const SITE_LAYERS = ['site-plan-fill','site-plan-outline','bldg-fill','bldg-outline'];
+
+    function setSiteOpacity(fill, line) {
+      map.setPaintProperty('site-plan-fill',    'fill-opacity',  fill);
+      map.setPaintProperty('site-plan-outline', 'line-opacity',  line);
+      map.setPaintProperty('bldg-fill',         'fill-opacity',  fill * 1.8);
+      map.setPaintProperty('bldg-outline',      'line-opacity',  line);
+    }
+
+    function fadeMaterial(mat, to, ms) {
+      const from = mat.opacity;
+      const t0   = performance.now();
+      const tick = () => {
+        const p  = Math.min(1, (performance.now() - t0) / ms);
+        const ep = p < 0.5 ? 2 * p * p : -1 + (4 - 2 * p) * p; // ease in-out quad
+        mat.opacity = from + (to - from) * ep;
+        mat.needsUpdate = true;
+        if (p < 1) requestAnimationFrame(tick);
+        else if (to > 0) map.triggerRepaint(); // keep alive after fade-in
+      };
+      tick();
+    }
+
+    function flyTo(options) {
+      return new Promise(resolve => {
+        map.flyTo({ ...options, essential: true });
+        map.once('moveend', resolve);
+      });
+    }
+
+    async function goTo3D() {
+      transitioning = true;
+      btn.disabled  = true;
+      statusEl.textContent = 'Transitioning…';
+      loaderEl.classList.add('visible');
+
+      setSiteOpacity(0, 0);
+
+      await flyTo({ pitch: 65, bearing: -25, zoom: INIT_ZOOM - 0.6, duration: 1400 });
+
+      fadeMaterial(pcMesh.material, 1.0, 900);
+      map.triggerRepaint();
+
+      loaderEl.classList.remove('visible');
+      btn.textContent      = '← Back to 2D';
+      statusEl.textContent = '3D — LiDAR Point Cloud';
+      badgeEl.textContent  = '3D';
+      badgeEl.className    = 'mode-3d';
+      is3D          = true;
+      transitioning = false;
+      btn.disabled  = false;
+    }
+
+    async function goTo2D() {
+      transitioning = true;
+      btn.disabled  = true;
+      statusEl.textContent = 'Transitioning…';
+
+      fadeMaterial(pcMesh.material, 0, 500);
+
+      await flyTo({ pitch: 0, bearing: 0, zoom: INIT_ZOOM, duration: 1200 });
+
+      setSiteOpacity(0.08, 0.85);
+
+      btn.textContent      = 'View in 3D →';
+      statusEl.textContent = '2D — Satellite + Site Plan';
+      badgeEl.textContent  = '2D';
+      badgeEl.className    = 'mode-2d';
+      is3D          = false;
+      transitioning = false;
+      btn.disabled  = false;
+    }
+
+    btn.addEventListener('click', () => {
+      if (transitioning) return;
+      is3D ? goTo2D() : goTo3D();
+    });
+
+    // ─── MAP LOAD ────────────────────────────────────────────────────────────────
+    map.on('load', () => {
+      const plan = buildSitePlan();
+
+      map.addSource('site-plan', { type: 'geojson', data: plan });
+
+      // Site block boundaries — yellow "SVG site plan" lines
+      map.addLayer({
+        id: 'site-plan-fill',
+        type: 'fill',
+        source: 'site-plan',
+        filter: ['==', ['get', 'kind'], 'block'],
+        paint: { 'fill-color': '#ffdd00', 'fill-opacity': 0.08 }
+      });
+      map.addLayer({
+        id: 'site-plan-outline',
+        type: 'line',
+        source: 'site-plan',
+        filter: ['==', ['get', 'kind'], 'block'],
+        paint: { 'line-color': '#ffdd00', 'line-width': 1.5, 'line-opacity': 0.85 }
+      });
+
+      // Building footprints — cyan/green fill
+      map.addLayer({
+        id: 'bldg-fill',
+        type: 'fill',
+        source: 'site-plan',
+        filter: ['==', ['get', 'kind'], 'building'],
+        paint: { 'fill-color': '#22ee88', 'fill-opacity': 0.45 }
+      });
+      map.addLayer({
+        id: 'bldg-outline',
+        type: 'line',
+        source: 'site-plan',
+        filter: ['==', ['get', 'kind'], 'building'],
+        paint: { 'line-color': '#00ff99', 'line-width': 1.2, 'line-opacity': 1.0 }
+      });
+
+      // Three.js custom WebGL layer (renders on top of map)
+      map.addLayer(customLayer);
+
+      statusEl.textContent = '2D — Satellite + Site Plan';
+    });
+  </script>
+</body>
+</html>
