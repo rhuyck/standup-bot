@@ -11,7 +11,7 @@ const state = {
   capturedImageMime:   null,   // e.g. 'image/jpeg'
   allBooks:            [],     // cached from localStorage
   savedBook:           null,   // book just saved (for photo tagging)
-  photoIndex:          0,      // 0=A, 1=B, 2=C … for current saved book
+  usedLetters:         new Set(), // letters already assigned to this book's photos
 };
 
 // ---- Initialise ----
@@ -144,8 +144,8 @@ function resetAddBook() {
   document.getElementById('tagged-camera-input').value = '';
   document.getElementById('tagged-file-input').value = '';
   document.getElementById('tagged-photos-list').innerHTML = '';
-  state.savedBook  = null;
-  state.photoIndex = 0;
+  state.savedBook   = null;
+  state.usedLetters = new Set();
   hideScanStatus();
 
   // Clear form fields
@@ -349,11 +349,11 @@ function saveBook() {
   refreshCache();
 
   // Success screen
-  state.savedBook  = book;
-  state.photoIndex = 0;
-  document.getElementById('saved-summary').textContent = `"${book.title}" saved as #${book.id}`;
-  document.getElementById('tagged-photos-list').innerHTML = '';
-  updateNextLabelDisplay();
+  state.savedBook    = book;
+  state.usedLetters  = new Set();
+  document.getElementById('saved-summary').textContent       = `"${book.title}" saved as #${book.id}`;
+  document.getElementById('saved-book-id-display').textContent = book.id;
+  document.getElementById('tagged-photos-list').innerHTML    = '';
   showStep('saved');
   updateDashboard();
 }
@@ -517,29 +517,36 @@ function getNextId() {
 // ============================================================
 
 function handleTaggedPhoto(event) {
-  const file = event.target.files[0];
-  if (!file || !state.savedBook) return;
+  const files = Array.from(event.target.files);
+  if (!files.length || !state.savedBook) return;
   event.target.value = '';
 
-  const letter = photoLetter(state.photoIndex);
-  const label  = `${state.savedBook.id}${letter}`;
+  files.forEach(file => {
+    const letter = randomUnusedLetter(state.usedLetters);
+    if (!letter) return; // all 26 used (extremely unlikely)
+    state.usedLetters.add(letter);
+    const label = `${state.savedBook.id}${letter}`;
 
-  const reader = new FileReader();
-  reader.onload = e => {
-    resizeImage(e.target.result, 1600, (dataUrl, mime, b64) => {
-      // Embed catalog info into the JPEG COM (comment) segment
-      const comment  = buildPhotoComment(state.savedBook, label);
-      const taggedB64 = addJpegComment(b64, comment);
-      const taggedUrl = `data:image/jpeg;base64,${taggedB64}`;
+    const reader = new FileReader();
+    reader.onload = e => {
+      resizeImage(e.target.result, 1600, (dataUrl, mime, b64) => {
+        const comment   = buildPhotoComment(state.savedBook, label);
+        const taggedB64 = addJpegComment(b64, comment);
+        const taggedUrl = `data:image/jpeg;base64,${taggedB64}`;
+        addTaggedPhotoToList(taggedUrl, label);
+        triggerDownload(taggedUrl, `${label}.jpg`);
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
-      addTaggedPhotoToList(taggedUrl, label);
-      triggerDownload(taggedUrl, `${label}.jpg`);
-
-      state.photoIndex++;
-      updateNextLabelDisplay();
-    });
-  };
-  reader.readAsDataURL(file);
+/** Returns a random uppercase letter not yet in the usedLetters set. */
+function randomUnusedLetter(usedLetters) {
+  const available = Array.from({length: 26}, (_, i) => String.fromCharCode(65 + i))
+                        .filter(l => !usedLetters.has(l));
+  if (!available.length) return null;
+  return available[Math.floor(Math.random() * available.length)];
 }
 
 /** Build a human-readable comment string to embed in the JPEG. */
@@ -601,16 +608,6 @@ function addTaggedPhotoToList(dataUrl, label) {
   list.appendChild(item);
 }
 
-function updateNextLabelDisplay() {
-  if (!state.savedBook) return;
-  const label = `${state.savedBook.id}${photoLetter(state.photoIndex)}`;
-  document.getElementById('next-label-display').textContent = label;
-}
-
-/** 0 → 'A', 1 → 'B', 2 → 'C', … */
-function photoLetter(index) {
-  return String.fromCharCode(65 + index);
-}
 
 function triggerDownload(dataUrl, filename) {
   const a = document.createElement('a');

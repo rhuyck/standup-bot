@@ -141,15 +141,14 @@
     <div class="card">
       <h3>📷 Tag Your Photos</h3>
       <p class="photo-tag-desc">
-        Each photo will download as <strong id="next-label-display">–</strong>.jpg
-        with the catalog ID and book info embedded in the file metadata.
+        Each photo downloads as <strong id="saved-book-id-display">–</strong>[letter].jpg
+        with the catalog ID embedded in the file metadata.
+        Letters are assigned automatically — order doesn't matter.
       </p>
-      <div class="capture-actions">
         <button class="btn-capture" onclick="document.getElementById('tagged-camera-input').click()">📷 Camera</button>
-        <button class="btn-capture" onclick="document.getElementById('tagged-file-input').click()">🖼️ Gallery</button>
-      </div>
+        <button class="btn-capture" onclick="document.getElementById('tagged-file-input').click()">🖼️ Gallery (multi-select)</button>
       <input type="file" id="tagged-camera-input" accept="image/*" capture="environment" style="display:none">
-      <input type="file" id="tagged-file-input" accept="image/*" style="display:none">
+      <input type="file" id="tagged-file-input" accept="image/*" multiple style="display:none">
       <div id="tagged-photos-list" class="tagged-photos-list"></div>
       <p class="ios-hint">iOS: if the download doesn't start, long-press a thumbnail → Save to Photos.</p>
     </div>
