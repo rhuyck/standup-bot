@@ -10,6 +10,8 @@ const state = {
   capturedImageBase64: null,   // base64 string (no data-URI prefix)
   capturedImageMime:   null,   // e.g. 'image/jpeg'
   allBooks:            [],     // cached from localStorage
+  savedBook:           null,   // book just saved (for photo tagging)
+  photoIndex:          0,      // 0=A, 1=B, 2=C … for current saved book
 };
 
 // ---- Initialise ----
@@ -20,6 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('camera-input').addEventListener('change', handleImage);
   document.getElementById('file-input').addEventListener('change', handleImage);
+  document.getElementById('tagged-camera-input').addEventListener('change', handleTaggedPhoto);
+  document.getElementById('tagged-file-input').addEventListener('change', handleTaggedPhoto);
 
   // Restore session (person stays selected across page refreshes within the same tab)
   const savedName = sessionStorage.getItem('kendra_person');
@@ -137,6 +141,11 @@ function resetAddBook() {
   document.getElementById('scan-btn').disabled = true;
   document.getElementById('camera-input').value = '';
   document.getElementById('file-input').value = '';
+  document.getElementById('tagged-camera-input').value = '';
+  document.getElementById('tagged-file-input').value = '';
+  document.getElementById('tagged-photos-list').innerHTML = '';
+  state.savedBook  = null;
+  state.photoIndex = 0;
   hideScanStatus();
 
   // Clear form fields
@@ -334,11 +343,11 @@ function saveBook() {
   refreshCache();
 
   // Success screen
-  document.getElementById('saved-summary').textContent =
-    `"${book.title}" saved as #${book.id}`;
-  document.getElementById('photo-tip').innerHTML =
-    `<strong>📷 Photo labels for this book:</strong><br>` +
-    `Name your photos <strong>${book.id}A.jpg</strong>, <strong>${book.id}B.jpg</strong>, etc.`;
+  state.savedBook  = book;
+  state.photoIndex = 0;
+  document.getElementById('saved-summary').textContent = `"${book.title}" saved as #${book.id}`;
+  document.getElementById('tagged-photos-list').innerHTML = '';
+  updateNextLabelDisplay();
   showStep('saved');
   updateDashboard();
 }
@@ -495,6 +504,115 @@ function getNextId() {
     if (!usedIds.has(id)) return id;
   }
   return null;
+}
+
+// ============================================================
+// TAGGED PHOTO CAPTURE & JPEG METADATA EMBEDDING
+// ============================================================
+
+function handleTaggedPhoto(event) {
+  const file = event.target.files[0];
+  if (!file || !state.savedBook) return;
+  event.target.value = '';
+
+  const letter = photoLetter(state.photoIndex);
+  const label  = `${state.savedBook.id}${letter}`;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    resizeImage(e.target.result, 1600, (dataUrl, mime, b64) => {
+      // Embed catalog info into the JPEG COM (comment) segment
+      const comment  = buildPhotoComment(state.savedBook, label);
+      const taggedB64 = addJpegComment(b64, comment);
+      const taggedUrl = `data:image/jpeg;base64,${taggedB64}`;
+
+      addTaggedPhotoToList(taggedUrl, label);
+      triggerDownload(taggedUrl, `${label}.jpg`);
+
+      state.photoIndex++;
+      updateNextLabelDisplay();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+/** Build a human-readable comment string to embed in the JPEG. */
+function buildPhotoComment(book, label) {
+  return [
+    'Kendra Catalog',
+    `ID: ${label}`,
+    book.title    ? `Title: ${book.title}`       : null,
+    book.author   ? `Author: ${book.author}`     : null,
+    book.genre    ? `Genre: ${book.genre}`        : null,
+    book.condition? `Condition: ${shortCondition(book.condition)}` : null,
+  ].filter(Boolean).join(' | ');
+}
+
+/**
+ * Inserts a JPEG COM (comment) segment right after the SOI marker (FF D8).
+ * The comment is UTF-8 encoded and readable by ExifTool, Windows file
+ * properties, and most JPEG-aware photo tools.
+ */
+function addJpegComment(base64, comment) {
+  try {
+    const bytes      = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    const commentEnc = new TextEncoder().encode(comment);
+
+    // COM segment layout: FF FE [2-byte length = 2 + data length] [data]
+    const segLen = 2 + commentEnc.length;
+    const com    = new Uint8Array(4 + commentEnc.length);
+    com[0] = 0xFF; com[1] = 0xFE;
+    com[2] = (segLen >> 8) & 0xFF;
+    com[3] =  segLen       & 0xFF;
+    com.set(commentEnc, 4);
+
+    // Reassemble: SOI (FF D8) + COM segment + remainder of original JPEG
+    const out = new Uint8Array(2 + com.length + bytes.length - 2);
+    out[0] = 0xFF; out[1] = 0xD8;
+    out.set(com, 2);
+    out.set(bytes.slice(2), 2 + com.length);
+
+    // Convert byte array → binary string → base64
+    let bin = '';
+    out.forEach(b => bin += String.fromCharCode(b));
+    return btoa(bin);
+  } catch {
+    return base64; // fallback: return original if anything goes wrong
+  }
+}
+
+function addTaggedPhotoToList(dataUrl, label) {
+  const list = document.getElementById('tagged-photos-list');
+  const item = document.createElement('div');
+  item.className = 'tagged-item';
+  item.innerHTML = `
+    <img class="tagged-thumb" src="${dataUrl}" alt="${esc(label)}">
+    <div>
+      <div class="tagged-label">${esc(label)}.jpg</div>
+      <div class="tagged-status">✅ Downloaded · metadata embedded</div>
+    </div>
+  `;
+  list.appendChild(item);
+}
+
+function updateNextLabelDisplay() {
+  if (!state.savedBook) return;
+  const label = `${state.savedBook.id}${photoLetter(state.photoIndex)}`;
+  document.getElementById('next-label-display').textContent = label;
+}
+
+/** 0 → 'A', 1 → 'B', 2 → 'C', … */
+function photoLetter(index) {
+  return String.fromCharCode(65 + index);
+}
+
+function triggerDownload(dataUrl, filename) {
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // ============================================================
