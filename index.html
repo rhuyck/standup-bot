@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#5c3d2e">
+  <title>Kendra – Book Catalog</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== WELCOME SCREEN ===================== -->
+<div id="screen-welcome" class="screen active">
+  <div class="welcome-hero">
+    <div class="hero-icon">📚</div>
+    <h1>Kendra</h1>
+    <p class="subtitle">Family Book Catalog</p>
+  </div>
+  <div class="card">
+    <h2>Who are you?</h2>
+    <p class="pick-hint">Select your name to see your assigned lot.</p>
+    <div id="person-list" class="person-list"></div>
+  </div>
+</div>
+
+<!-- ===================== DASHBOARD SCREEN ===================== -->
+<div id="screen-dashboard" class="screen">
+  <header class="app-header">
+    <div>
+      <div class="header-title" id="greeting">Hello!</div>
+      <div class="header-sub" id="lot-info">Lot: –</div>
+    </div>
+    <button class="icon-btn" onclick="showScreen('settings')" aria-label="Settings">⚙️</button>
+  </header>
+
+  <div class="card stat-card">
+    <div class="stat">
+      <span class="stat-number" id="books-count">0</span>
+      <span class="stat-label">Books logged</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-number" id="next-id-display">–</span>
+      <span class="stat-label">Next ID</span>
+    </div>
+  </div>
+
+  <button class="btn-primary big-btn" onclick="showScreen('add-book')">
+    + Add Book
+  </button>
+
+  <div id="recent-books" class="recent-section"></div>
+</div>
+
+<!-- ===================== ADD BOOK SCREEN ===================== -->
+<div id="screen-add-book" class="screen">
+  <header class="app-header">
+    <button class="back-btn" onclick="showScreen('dashboard')" aria-label="Back">← Back</button>
+    <h2>Add Book</h2>
+    <div style="width:44px"></div>
+  </header>
+
+  <!-- STEP 1: CAPTURE -->
+  <div id="step-capture" class="step active">
+    <div class="card capture-card">
+      <div id="preview-container" class="preview-container hidden">
+        <img id="image-preview" alt="Book cover preview">
+      </div>
+      <div id="capture-placeholder" class="capture-placeholder">
+        <span>📷</span>
+        <p>Photograph or upload a book cover to auto-detect title &amp; author</p>
+      </div>
+      <div class="capture-actions">
+        <button class="btn-capture" onclick="document.getElementById('camera-input').click()">
+          📷 Camera
+        </button>
+        <button class="btn-capture" onclick="document.getElementById('file-input').click()">
+          🖼️ Gallery
+        </button>
+      </div>
+      <!-- Hidden inputs -->
+      <input type="file" id="camera-input" accept="image/*" capture="environment" style="display:none">
+      <input type="file" id="file-input" accept="image/*" style="display:none">
+    </div>
+
+    <button class="btn-primary" id="scan-btn" onclick="scanBook()" disabled>
+      🔍 Scan with AI
+    </button>
+    <button class="btn-ghost" onclick="skipScan()">
+      Skip — enter details manually
+    </button>
+    <div id="scan-status" class="scan-status hidden"></div>
+  </div>
+
+  <!-- STEP 2: FORM -->
+  <div id="step-form" class="step">
+    <div class="card">
+      <div class="field">
+        <label>Book ID</label>
+        <div class="id-badge" id="assigned-id">–</div>
+      </div>
+      <div class="field">
+        <label for="field-title">Title <span class="required">*</span></label>
+        <input type="text" id="field-title" placeholder="Book title" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="field-author">Author</label>
+        <input type="text" id="field-author" placeholder="Author name" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="field-genre">Genre <span class="required">*</span></label>
+        <select id="field-genre">
+          <option value="">Select a genre…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="field-condition">Condition <span class="required">*</span></label>
+        <select id="field-condition">
+          <option value="">Select condition…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="field-notes">Notes</label>
+        <textarea id="field-notes" placeholder="Inscriptions, damage details, anything else…" rows="3"></textarea>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="saveBook()">💾 Save Book</button>
+    <button class="btn-ghost" onclick="backToCapture()">← Re-scan photo</button>
+  </div>
+
+  <!-- STEP 3: SUCCESS -->
+  <div id="step-saved" class="step center-content">
+    <div class="success-icon">✅</div>
+    <h2>Book Saved!</h2>
+    <p class="saved-summary" id="saved-summary"></p>
+    <div class="photo-tip" id="photo-tip"></div>
+    <button class="btn-primary" onclick="addAnotherBook()">+ Add Another Book</button>
+    <button class="btn-ghost" onclick="showScreen('dashboard')">Back to Dashboard</button>
+  </div>
+</div>
+
+<!-- ===================== BOOK LIST SCREEN ===================== -->
+<div id="screen-books" class="screen">
+  <header class="app-header">
+    <button class="back-btn" onclick="showScreen('dashboard')">← Back</button>
+    <h2>My Books</h2>
+    <button class="icon-btn" onclick="exportCSV()" aria-label="Export CSV">⬇️</button>
+  </header>
+  <div id="book-search-bar" class="search-bar">
+    <input type="search" id="book-search" placeholder="Search title or author…" oninput="filterBooks(this.value)">
+  </div>
+  <div id="book-list" class="book-list"></div>
+</div>
+
+<!-- ===================== SETTINGS SCREEN ===================== -->
+<div id="screen-settings" class="screen">
+  <header class="app-header">
+    <button class="back-btn" onclick="showScreen('dashboard')">← Back</button>
+    <h2>Settings</h2>
+    <div style="width:44px"></div>
+  </header>
+
+  <div class="card">
+    <h3>AI Configuration</h3>
+    <div class="field">
+      <label for="api-key-input">Anthropic API Key</label>
+      <input type="password" id="api-key-input" placeholder="sk-ant-…" autocomplete="off">
+      <p class="hint">Powers the book-cover AI scan. Get a free key at <strong>console.anthropic.com</strong></p>
+    </div>
+    <button class="btn-primary" onclick="saveSettings()">Save</button>
+  </div>
+
+  <div class="card">
+    <h3>Export &amp; Data</h3>
+    <button class="btn-secondary full-width" onclick="exportCSV()">⬇️ Export My Books (CSV)</button>
+    <button class="btn-secondary full-width" style="margin-top:8px" onclick="exportAllCSV()">⬇️ Export ALL Books (CSV)</button>
+    <button class="btn-ghost danger full-width" style="margin-top:12px" onclick="confirmClearData()">🗑️ Clear All My Data</button>
+  </div>
+
+  <div class="card">
+    <h3>Account</h3>
+    <button class="btn-ghost full-width" onclick="switchPerson()">Switch Person</button>
+  </div>
+
+  <div class="app-version">Kendra v1.0 · Stored locally on this device</div>
+</div>
+
+<!-- ===================== BOTTOM NAV ===================== -->
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="nav-btn" data-screen="dashboard" onclick="showScreen('dashboard')">
+    🏠<span>Home</span>
+  </button>
+  <button class="nav-btn" data-screen="add-book" onclick="showScreen('add-book')">
+    ➕<span>Add</span>
+  </button>
+  <button class="nav-btn" data-screen="books" onclick="showScreen('books')">
+    📖<span>Books</span>
+  </button>
+  <button class="nav-btn" data-screen="settings" onclick="showScreen('settings')">
+    ⚙️<span>Settings</span>
+  </button>
+</nav>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
