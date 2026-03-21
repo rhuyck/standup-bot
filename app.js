@@ -11,7 +11,7 @@ const state = {
   capturedImageMime:   null,   // e.g. 'image/jpeg'
   allBooks:            [],     // cached from localStorage
   savedBook:           null,   // book just saved (for photo tagging)
-  usedLetters:         new Set(), // letters already assigned to this book's photos
+  photoIndex:          0,         // next letter index (0=A, 1=B, …) for current book's photos
 };
 
 // ---- Initialise ----
@@ -145,7 +145,7 @@ function resetAddBook() {
   document.getElementById('tagged-file-input').value = '';
   document.getElementById('tagged-photos-list').innerHTML = '';
   state.savedBook   = null;
-  state.usedLetters = new Set();
+  state.photoIndex  = 0;
   hideScanStatus();
 
   // Clear form fields
@@ -350,7 +350,7 @@ function saveBook() {
 
   // Success screen
   state.savedBook    = book;
-  state.usedLetters  = new Set();
+  state.photoIndex   = 0;
   document.getElementById('saved-summary').textContent       = `"${book.title}" saved as #${book.id}`;
   document.getElementById('saved-book-id-display').textContent = book.id;
   document.getElementById('tagged-photos-list').innerHTML    = '';
@@ -522,10 +522,8 @@ function handleTaggedPhoto(event) {
   event.target.value = '';
 
   files.forEach(file => {
-    const letter = randomUnusedLetter(state.usedLetters);
-    if (!letter) return; // all 26 used (extremely unlikely)
-    state.usedLetters.add(letter);
-    const label = `${state.savedBook.id}${letter}`;
+    const label = `${state.savedBook.id}${String.fromCharCode(65 + state.photoIndex++)}`;
+    if (state.photoIndex > 26) return; // safety cap
 
     const reader = new FileReader();
     reader.onload = e => {
@@ -541,13 +539,6 @@ function handleTaggedPhoto(event) {
   });
 }
 
-/** Returns a random uppercase letter not yet in the usedLetters set. */
-function randomUnusedLetter(usedLetters) {
-  const available = Array.from({length: 26}, (_, i) => String.fromCharCode(65 + i))
-                        .filter(l => !usedLetters.has(l));
-  if (!available.length) return null;
-  return available[Math.floor(Math.random() * available.length)];
-}
 
 /** Build a human-readable comment string to embed in the JPEG. */
 function buildPhotoComment(book, label) {
