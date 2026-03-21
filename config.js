@@ -18,6 +18,7 @@ const PEOPLE = [
 const GENRES = [
   "Erotica",
   "Science Fiction",
+  "Fantasy",
   "Photo Books",
   "Cookbooks",
   "Ancestry/Heritage",
