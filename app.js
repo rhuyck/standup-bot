@@ -244,6 +244,9 @@ async function scanBook() {
     const result = await callClaudeVision(state.capturedImageBase64, state.capturedImageMime, apiKey);
     document.getElementById('field-title').value  = result.title  || '';
     document.getElementById('field-author').value = result.author || '';
+    if (result.genre && GENRES.includes(result.genre)) {
+      document.getElementById('field-genre').value = result.genre;
+    }
     hideScanStatus();
     showStep('form');
   } catch (err) {
@@ -273,10 +276,13 @@ async function callClaudeVision(base64, mimeType, apiKey) {
           },
           {
             type: 'text',
-            text: 'This is a book cover image. Extract the book title and author name. ' +
+            text: 'This is a book cover image. Extract the book title, author name, and best-matching genre. ' +
+                  'The genre MUST be exactly one of these values: ' +
+                  JSON.stringify(GENRES) + '. ' +
                   'Respond with ONLY a valid JSON object and nothing else: ' +
-                  '{"title": "...", "author": "..."}. ' +
-                  'If a value cannot be determined, use an empty string.',
+                  '{"title": "...", "author": "...", "genre": "..."}. ' +
+                  'If title or author cannot be determined, use an empty string. ' +
+                  'Always pick the closest genre from the list — never invent a new one.',
           },
         ],
       }],
