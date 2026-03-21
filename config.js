@@ -7,12 +7,12 @@
 // lotStart is inclusive, lotEnd is inclusive.
 // Add or rename people here — names must be unique.
 const PEOPLE = [
-  { name: "Person 1", lotStart: 1,    lotEnd: 999  },
-  { name: "Person 2", lotStart: 1000, lotEnd: 1999 },
-  { name: "Person 3", lotStart: 2000, lotEnd: 2999 },
-  { name: "Person 4", lotStart: 3000, lotEnd: 3999 },
-  { name: "Person 5", lotStart: 4000, lotEnd: 4999 },
-  { name: "Person 6", lotStart: 5000, lotEnd: 5999 },
+  { name: "Jim",     lotStart: 1,    lotEnd: 999  },
+  { name: "Zara",    lotStart: 1000, lotEnd: 1999 },
+  { name: "Rhianna", lotStart: 2000, lotEnd: 2999 },
+  { name: "Patrick", lotStart: 3000, lotEnd: 3999 },
+  { name: "Randy",   lotStart: 4000, lotEnd: 4999 },
+  { name: "Jan",     lotStart: 5000, lotEnd: 5999 },
 ];
 
 const GENRES = [
